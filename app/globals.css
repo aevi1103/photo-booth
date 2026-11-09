@@ -131,9 +131,9 @@
     --ring: #72a9c8;
   }
   body { font-family: Arial, sans-serif; background: #f5faff; color: #274c63; }
-  .booth-shell { max-width: 1440px; margin: auto; padding: 0 6%; }
+  .booth-shell { width: 100%; max-width: 1440px; margin: 0 auto; padding: 0 6%; }
   .capture-shell { width: 100%; padding-inline: clamp(16px, 3vw, 40px); }
-  .topbar { height: 82px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e1edf4; }
+  .topbar { position: sticky; top: 0; z-index: 30; background: linear-gradient(90deg, #f5faff00, #f5faffeb 18%, #f5faffeb 82%, #f5faff00); backdrop-filter: blur(12px); height: 82px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e1edf4; }
   .brand { display: flex; align-items: center; gap: 8px; color: #558eae; font-size: 22px; font-weight: 700; text-decoration: none; }
   .brand span { color: #9bb5c3; font-size: 9px; letter-spacing: .16em; margin-left: 4px; }
   .booth-navigation { color: #558eae; font-family: inherit; border-color: #dceaf2; }

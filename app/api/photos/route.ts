@@ -2,8 +2,7 @@ import { requireUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isPhotoReservation } from "@/lib/photo-quota";
 import { appOrigin } from "@/lib/app-origin";
-
-const MAX_BYTES = 8 * 1024 * 1024;
+import { MAX_PHOTO_BYTES, PHOTO_SIZE_ERROR } from "@/lib/photo-limits";
 
 export async function GET(request: Request) {
   const auth = await requireUser();
@@ -48,7 +47,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "Only JPEG photos are accepted." }, { status: 415 });
   }
   const length = Number(request.headers.get("content-length"));
-  if (length > MAX_BYTES) return Response.json({ error: "Photo exceeds the 8 MB limit." }, { status: 413 });
+  if (length > MAX_PHOTO_BYTES) return Response.json({ error: PHOTO_SIZE_ERROR }, { status: 413 });
   if (!request.body) return Response.json({ error: "No photo was provided." }, { status: 400 });
   const reader = request.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -57,9 +56,9 @@ export async function POST(request: Request) {
     const { done, value } = await reader.read();
     if (done) break;
     total += value.length;
-    if (total > MAX_BYTES) {
+    if (total > MAX_PHOTO_BYTES) {
       await reader.cancel();
-      return Response.json({ error: "Photo exceeds the 8 MB limit." }, { status: 413 });
+      return Response.json({ error: PHOTO_SIZE_ERROR }, { status: 413 });
     }
     chunks.push(value);
   }

@@ -9,6 +9,8 @@ import { createCompositor } from "@/lib/compositor";
 import { useVoiceTrigger } from "@/lib/use-voice-trigger";
 import { SignOut } from "@/components/sign-out";
 import { isPhotoQuota, type PhotoQuota } from "@/lib/photo-quota";
+import { MAX_PHOTO_BYTES, PHOTO_SIZE_ERROR } from "@/lib/photo-limits";
+import { useBoothSounds } from "@/lib/use-booth-sounds";
 
 type Compositor = ReturnType<typeof createCompositor>;
 type Photo = { url: string; blob: Blob };
@@ -17,6 +19,8 @@ type Backdrop = { name: string; url: string };
 
 export function Booth({ backgrounds }: { backgrounds: Backdrop[] }) {
   const router = useRouter();
+  const sounds = useBoothSounds();
+  const { prepare: prepareSound, cancel: cancelSound } = sounds;
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const compositorRef = useRef<Compositor | null>(null);
@@ -122,6 +126,7 @@ export function Booth({ backgrounds }: { backgrounds: Backdrop[] }) {
   const connect = useCallback(async (selected: string) => {
     if (connectingRef.current) return;
     connectingRef.current = true;
+    void prepareSound();
     const connection = ++connectionRef.current;
     setConnecting(true);
     setMessage("");
@@ -143,6 +148,7 @@ export function Booth({ backgrounds }: { backgrounds: Backdrop[] }) {
       if (!track) throw new Error("The selected camera did not provide a video track.");
       const interrupted = () => {
         if (streamRef.current !== stream) return;
+        cancelSound();
         if (timerRef.current) clearTimeout(timerRef.current);
         setCountdown(null);
         captureBusyRef.current = false;
@@ -179,12 +185,13 @@ export function Booth({ backgrounds }: { backgrounds: Backdrop[] }) {
       connectingRef.current = false;
       if (connection === connectionRef.current) setConnecting(false);
     }
-  }, []);
+  }, [prepareSound, cancelSound]);
 
   async function upload(blob: Blob) {
     setUploadStatus("saving");
     setUploadState("Saving photo…");
     try {
+      if (blob.size > MAX_PHOTO_BYTES) throw new Error(PHOTO_SIZE_ERROR);
       const response = await fetch("/api/photos", {
         method: "POST",
         headers: { "Content-Type": "image/jpeg" },
@@ -217,6 +224,7 @@ export function Booth({ backgrounds }: { backgrounds: Backdrop[] }) {
     const context = output.getContext("2d");
     if (!context) { captureBusyRef.current = false; setMessage("Could not create the photo."); return; }
     context.drawImage(source, 0, 0);
+    sounds.play("shutter");
     output.toBlob((blob) => {
       if (!blob) { captureBusyRef.current = false; setMessage("Could not export the photo."); return; }
       setPhoto({ blob, url: URL.createObjectURL(blob) });
@@ -229,11 +237,13 @@ export function Booth({ backgrounds }: { backgrounds: Backdrop[] }) {
     captureBusyRef.current = true;
     setMessage("");
     setCountdown(3);
+    sounds.play("countdown");
     let value = 3;
     const tick = () => {
       value -= 1;
       if (value === 0) { setCountdown(null); capture(); return; }
       setCountdown(value);
+      sounds.play("countdown");
       timerRef.current = setTimeout(tick, 1000);
     };
     timerRef.current = setTimeout(tick, 1000);
@@ -261,9 +271,10 @@ export function Booth({ backgrounds }: { backgrounds: Backdrop[] }) {
             {countdown !== null && <div className="countdown">{countdown}</div>}
           </div>
           {message && <p className="notice" role="alert">{message}</p>}
+          {sounds.error && <p className="notice" role="alert">{sounds.error}</p>}
           <div className="actions">
             {!photo ? <Button className="capture-button" size="lg" disabled={!connected || !frameReady || !quota || quota.remaining === 0 || countdown !== null} onClick={startCountdown}><Cloud /> {countdown !== null ? "Get ready…" : "Take a photo"}</Button> : <><Button size="lg" disabled={uploadStatus === "saving"} onClick={() => { captureBusyRef.current = false; setPhoto(null); setUploadState(""); setUploadStatus("idle"); }}><RefreshCw /> Retake</Button>{uploadStatus === "failed" && <a className={buttonVariants({ variant: "outline", size: "lg" })} href={photo.url} download="baby-shower.jpg"><Download /> Download photo</a>}</>}
-            <Button className={`voice-button${voice.status === "off" ? "" : " is-active"}`} variant="outline" size="lg" type="button" aria-pressed={voice.status !== "off"} aria-describedby="voice-disclosure" title="Say capture to start the countdown. Microphone audio may be sent to your browser's speech service." onClick={voice.status === "off" ? voice.start : voice.stop}>
+            <Button className={`voice-button${voice.status === "off" ? "" : " is-active"}`} variant="outline" size="lg" type="button" aria-pressed={voice.status !== "off"} aria-describedby="voice-disclosure" title="Say capture to start the countdown. Microphone audio may be sent to your browser's speech service." onClick={() => { if (voice.status === "off") { void prepareSound(); voice.start(); } else voice.stop(); }}>
               {voice.status === "off" ? <Mic /> : <MicOff />}
               {voice.status === "off" ? "Enable voice capture" : "Stop voice capture"}
             </Button>

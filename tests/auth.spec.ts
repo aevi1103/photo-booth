@@ -83,6 +83,19 @@ test("concurrent uploads allow exactly 20 total per user across sessions", async
   finally { await secondSession.dispose(); }
 });
 
+test("Vercel-safe photo limit accepts 4 MiB and rejects one byte over without consuming quota", async ({ request, backend }) => {
+  const image = Buffer.alloc(4 * 1024 * 1024, 0);
+  image.set([0xff, 0xd8, 0xff], 0);
+  image.set([0xff, 0xd9], image.length - 2);
+  const tooLarge = await request.post("/api/photos", { headers: upload.headers, data: Buffer.concat([image, Buffer.from([0])]) });
+  expect(tooLarge.status()).toBe(413);
+  expect(await tooLarge.json()).toHaveProperty("error", "Photo exceeds the 4 MB upload limit. Download it as a backup.");
+  expect(backend.objects.size).toBe(0);
+  expect(await (await request.get("/api/account")).json()).toMatchObject({ quota: { used: 0 } });
+  expect((await request.post("/api/photos", { headers: upload.headers, data: image })).status()).toBe(200);
+  expect([...backend.objects.values()][0].length).toBe(4 * 1024 * 1024);
+});
+
 test("admins can save beyond 20 and other users have separate allowances", async ({ backend, playwright }) => {
   const admin = await playwright.request.newContext({ baseURL: "http://127.0.0.1:3210", storageState: { cookies: [sessionCookie(adminId)], origins: [] } });
   const other = await playwright.request.newContext({ baseURL: "http://127.0.0.1:3210", storageState: { cookies: [sessionCookie(otherId)], origins: [] } });

@@ -3,6 +3,34 @@ import { readFile } from "node:fs/promises";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
+    const audioEvents: { kind: string; time: number; frequency?: number; duration?: number; hasSignal?: boolean }[] = [];
+    Object.assign(window, { boothAudioEvents: audioEvents });
+    const oscillator = AudioContext.prototype.createOscillator;
+    AudioContext.prototype.createOscillator = function () {
+      const source = oscillator.call(this);
+      let frequency = source.frequency.value;
+      const setFrequency = source.frequency.setValueAtTime.bind(source.frequency);
+      source.frequency.setValueAtTime = (value, time) => {
+        frequency = value;
+        return setFrequency(value, time);
+      };
+      const start = source.start.bind(source);
+      source.start = (when = 0) => {
+        audioEvents.push({ kind: "countdown", time: performance.now(), frequency });
+        start(when);
+      };
+      return source;
+    };
+    const bufferSource = AudioContext.prototype.createBufferSource;
+    AudioContext.prototype.createBufferSource = function () {
+      const source = bufferSource.call(this);
+      const start = source.start.bind(source);
+      source.start = (when = 0) => {
+        audioEvents.push({ kind: "shutter", time: performance.now(), duration: source.buffer?.duration, hasSignal: source.buffer?.getChannelData(0).some((sample) => sample !== 0) });
+        start(when);
+      };
+      return source;
+    };
     const source = document.createElement("canvas");
     source.width = 320; source.height = 180;
     const context = source.getContext("2d")!;
@@ -75,6 +103,22 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 844, height: 390 }
     expect(dimensions).toEqual({ width: 180, height: Math.round(180 * 768 / 1153) });
   });
 }
+
+test("headers start at the top on tall screens and stay visible while scrolling", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 1800 });
+  for (const path of ["/", "/gallery", "/login"]) {
+    await page.goto(path);
+    await expect(page.locator(".topbar")).toHaveCSS("position", "sticky");
+    const header = await page.locator(".topbar").boundingBox();
+    expect(header?.y).toBe(0);
+  }
+  await page.setViewportSize({ width: 390, height: 600 });
+  await page.goto("/");
+  await page.evaluate(() => window.scrollTo(0, 250));
+  const header = await page.locator(".topbar").boundingBox();
+  expect(header?.y).toBe(0);
+  await expect(page.getByRole("link", { name: "View gallery" })).toBeVisible();
+});
 
 test("mobile puts booth first and toggles settings without stopping the camera or resetting options", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -151,6 +195,7 @@ test("camera interruption cancels countdown and reconnect restores capture", asy
   await expect(page.getByRole("button", { name: "Connect", exact: true })).toBeEnabled();
   await page.waitForTimeout(3200);
   expect(uploads).toBe(0);
+  expect(await page.evaluate(() => (window as Window & { boothAudioEvents?: { kind: string }[] }).boothAudioEvents?.filter((event) => event.kind === "shutter").length)).toBe(0);
   await expect(page.getByAltText("Your captured photo")).toHaveCount(0);
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await expect(page.getByRole("button", { name: "Take a photo" })).toBeEnabled();
@@ -184,6 +229,13 @@ test("frame and camera appear in preview and are automatically uploaded without 
   await capture.click();
   await expect(page.getByAltText("Your captured photo")).toBeVisible({ timeout: 10_000 });
   await expect(page.getByText("Saved privately for the host.")).toBeVisible();
+  const sounds = await page.evaluate(() => (window as Window & { boothAudioEvents?: { kind: string; time: number; frequency?: number; duration?: number; hasSignal?: boolean }[] }).boothAudioEvents);
+  expect(sounds?.map((sound) => sound.kind)).toEqual(["countdown", "countdown", "countdown", "shutter"]);
+  expect(sounds?.slice(0, 3).every((sound) => sound.frequency === 880)).toBe(true);
+  expect(sounds?.[3]).toMatchObject({ duration: expect.closeTo(0.18, 2), hasSignal: true });
+  for (let index = 1; index < 4; index++) {
+    expect(sounds![index].time - sounds![index - 1].time).toBeGreaterThan(700);
+  }
   const matches = await page.getByAltText("Your captured photo").evaluate((image: HTMLImageElement) => {
     const canvas = document.createElement("canvas");
     canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
@@ -237,6 +289,23 @@ for (const failure of ["unconfigured", "offline"]) {
     expect(attempts).toBe(2);
   });
 }
+
+test("oversized captures offer download without sending a request to Vercel", async ({ page }) => {
+  let attempts = 0;
+  await page.route("**/api/photos", (route) => { attempts++; return route.fulfill({ json: { saved: true } }); });
+  await page.addInitScript(() => {
+    HTMLCanvasElement.prototype.toBlob = function (callback) {
+      callback(new Blob([new Uint8Array(4 * 1024 * 1024 + 1)], { type: "image/jpeg" }));
+    };
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Take a photo" })).toBeEnabled();
+  await page.getByRole("button", { name: "Take a photo" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "4 MB upload limit" })).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByRole("link", { name: "Download photo" })).toBeVisible();
+  expect(attempts).toBe(0);
+});
 
 test("saving prevents retake and only confirmed saves hide the fallback", async ({ page }) => {
   let release: (() => void) | undefined;
@@ -335,6 +404,22 @@ test("voice capture starts one countdown and can capture again after retake", as
   await expect(page.getByAltText("Your captured photo")).toBeVisible({ timeout: 10_000 });
   await page.getByRole("button", { name: "Stop voice capture" }).click();
   await expect(page.getByText("Voice control is off.")).toBeVisible();
+  const audio = await page.evaluate(() => (window as Window & { boothAudioEvents?: { kind: string }[] }).boothAudioEvents);
+  expect(audio?.filter((event) => event.kind === "countdown")).toHaveLength(6);
+  expect(audio?.filter((event) => event.kind === "shutter")).toHaveLength(2);
+});
+
+test("audio failure is explicit but does not prevent capture and saving", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "AudioContext", { value: class { constructor() { throw new Error("Audio unavailable"); } } });
+  });
+  await page.route("**/api/photos", (route) => route.fulfill({ json: { saved: true } }));
+  await page.goto("/");
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Sound is unavailable" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Take a photo" })).toBeEnabled();
+  await page.getByRole("button", { name: "Take a photo" }).click();
+  await expect(page.getByText("Saved privately for the host.")).toBeVisible({ timeout: 10_000 });
 });
 
 test("voice control reports microphone errors and remains optional", async ({ page }) => {
