@@ -1,21 +1,48 @@
-import { timingSafeEqual, randomUUID } from "node:crypto";
-import { createClient } from "@supabase/supabase-js";
+import { requireUser } from "@/lib/auth";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { isPhotoReservation } from "@/lib/photo-quota";
+import { appOrigin } from "@/lib/app-origin";
 
 const MAX_BYTES = 8 * 1024 * 1024;
 
-function matchesCode(received: string, expected: string) {
-  const a = Buffer.from(received);
-  const b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b);
+export async function GET(request: Request) {
+  const auth = await requireUser();
+  if (auth.response) return auth.response;
+  const headers = { "Cache-Control": "private, no-store" };
+  const rawOffset = new URL(request.url).searchParams.get("offset") ?? "0";
+  const offset = Number(rawOffset);
+  if (!/^\d+$/.test(rawOffset) || !Number.isSafeInteger(offset) || offset > 2147483622) {
+    return Response.json({ error: "Invalid photo page." }, { status: 400, headers });
+  }
+  const client = createAdminClient();
+  const bucket = client.storage.from("photos");
+  const { data, error } = await client.rpc("list_booth_photos", { p_user_id: auth.user.id, p_offset: offset });
+  if (error || !Array.isArray(data) || !data.every((file: unknown) => file && typeof file === "object" && "name" in file && typeof file.name === "string" && "created_at" in file && typeof file.created_at === "string")) {
+    console.error("Photo listing failed:", error?.message ?? "Invalid photo list.");
+    return Response.json({ error: "Could not load photos. Please retry." }, { status: 503, headers });
+  }
+  const files: { name: string; created_at: string }[] = data;
+  const images = files.slice(0, 24);
+  if (!images.length) {
+    return Response.json({ photos: [], nextOffset: files.length > 24 ? offset + 24 : null }, { headers });
+  }
+  const { data: signed, error: signingError } = await bucket.createSignedUrls(images.map((file) => file.name), 900);
+  if (signingError || !signed || signed.length !== images.length || signed.some((photo) => photo.error || !photo.signedUrl)) {
+    console.error("Photo URL signing failed:", signingError?.message ?? "Missing signed photo URL.");
+    return Response.json({ error: "Could not open photos. Please retry." }, { status: 503, headers });
+  }
+  return Response.json({
+    photos: images.map((file, index) => ({ name: file.name, createdAt: file.created_at, url: signed[index].signedUrl })),
+    nextOffset: files.length > 24 ? offset + 24 : null,
+  }, { headers });
 }
 
 export async function POST(request: Request) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const secret = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const code = process.env.BOOTH_UPLOAD_CODE;
-  if (!url || !secret || !code) return Response.json({ error: "Online photo saving is not configured." }, { status: 503 });
-  if (!matchesCode(request.headers.get("x-booth-code") ?? "", code)) {
-    return Response.json({ error: "The booth upload code is missing or incorrect." }, { status: 401 });
+  const auth = await requireUser();
+  if (auth.response) return auth.response;
+  const origin = request.headers.get("origin");
+  if (origin && origin !== appOrigin(request)) {
+    return Response.json({ error: "Invalid upload origin." }, { status: 403 });
   }
   if (request.headers.get("content-type") !== "image/jpeg") {
     return Response.json({ error: "Only JPEG photos are accepted." }, { status: 415 });
@@ -40,17 +67,34 @@ export async function POST(request: Request) {
   if (image.length < 4 || image[0] !== 0xff || image[1] !== 0xd8 || image[2] !== 0xff || image[image.length - 2] !== 0xff || image[image.length - 1] !== 0xd9) {
     return Response.json({ error: "The photo is not a valid JPEG." }, { status: 400 });
   }
-  const client = createClient(url, secret, { auth: { persistSession: false } });
+  const client = createAdminClient();
   const { data: allowed, error: limitError } = await client.rpc("allow_photo_upload");
   if (limitError) {
     console.error("Photo upload rate limit failed:", limitError.message);
     return Response.json({ error: "Photo saving is temporarily unavailable." }, { status: 503 });
   }
   if (!allowed) return Response.json({ error: "Too many uploads. Please wait a minute and retry." }, { status: 429 });
-  const { error } = await client.storage.from("photos").upload(`${randomUUID()}.jpg`, image, { contentType: "image/jpeg", upsert: false });
+  const { data: reservation, error: quotaError } = await client.rpc("reserve_photo_upload", { p_user_id: auth.user.id });
+  if (quotaError || !isPhotoReservation(reservation)) {
+    console.error("Photo quota reservation failed:", quotaError?.message ?? "Invalid quota reservation.");
+    return Response.json({ error: "Could not check your upload allowance. Please retry." }, { status: 503 });
+  }
+  if (!reservation.allowed) return Response.json({ error: "You have reached your total limit of 20 photos.", quota: reservation.quota }, { status: 409, headers: { "Cache-Control": "no-store" } });
+  if (!reservation.path.startsWith(`${auth.user.id}/`)) {
+    console.error("Invalid reserved photo path.");
+    return Response.json({ error: "Could not prepare your photo upload." }, { status: 503 });
+  }
+  const { error } = await client.storage.from("photos").upload(reservation.path, image, { contentType: "image/jpeg", upsert: false });
   if (error) {
     console.error("Photo upload failed:", error.message);
+    // Keep an uncertain upload reserved: a network error may still have stored it.
+    if ("statusCode" in error && Number(error.statusCode) >= 400 && Number(error.statusCode) < 500) {
+      const { error: releaseError } = await client.rpc("release_photo_upload", { p_upload_id: reservation.id });
+      if (releaseError) console.error("Photo allowance release failed:", releaseError.message);
+    }
     return Response.json({ error: "Could not save photo. Please retry." }, { status: 503 });
   }
-  return Response.json({ saved: true }, { headers: { "Cache-Control": "no-store" } });
+  const { error: recordError } = await client.from("photo_uploads").update({ status: "uploaded" }).eq("id", reservation.id);
+  if (recordError) console.error("Photo was saved but its reservation status could not be updated:", recordError.message);
+  return Response.json({ saved: true, quota: reservation.quota }, { headers: { "Cache-Control": "no-store" } });
 }

@@ -1,4 +1,4 @@
-type Settings = { color: string; threshold: number; softness: number; mirror: boolean };
+type Settings = { color: string; threshold: number; softness: number; mirror: boolean; greenScreen: boolean };
 
 const vertex = `
 attribute vec2 position;
@@ -11,22 +11,30 @@ precision mediump float;
 varying vec2 uv;
 uniform sampler2D camera;
 uniform sampler2D background;
+uniform sampler2D frameImage;
 uniform vec3 keyColor;
 uniform float threshold;
 uniform float softness;
 uniform float mirror;
+uniform float greenScreen;
 uniform vec2 backgroundScale;
+uniform vec2 cameraScale;
+uniform vec4 opening;
 vec2 chroma(vec3 c) {
   c = c / max(c.r + c.g + c.b, 0.001);
   return vec2(c.b - c.g, c.r - c.g);
 }
 void main() {
-  vec2 cameraUv = vec2(mix(uv.x, 1.0 - uv.x, mirror), uv.y);
+  vec2 windowUv = (uv - opening.xy) / opening.zw;
+  vec2 cameraUv = (windowUv - 0.5) * cameraScale + 0.5;
+  cameraUv.x = mix(cameraUv.x, 1.0 - cameraUv.x, mirror);
   vec3 foreground = texture2D(camera, cameraUv).rgb;
-  vec3 backdrop = texture2D(background, (uv - 0.5) * backgroundScale + 0.5).rgb;
+  vec3 backdrop = texture2D(background, (windowUv - 0.5) * backgroundScale + 0.5).rgb;
   float distanceToKey = distance(chroma(foreground), chroma(keyColor));
-  float alpha = smoothstep(threshold, threshold + softness, distanceToKey);
-  gl_FragColor = vec4(mix(backdrop, foreground, alpha), 1.0);
+  float alpha = mix(1.0, smoothstep(threshold, threshold + softness, distanceToKey), greenScreen);
+  vec3 video = mix(backdrop, foreground, alpha);
+  vec4 frame = texture2D(frameImage, uv);
+  gl_FragColor = vec4(mix(video, frame.rgb, frame.a), 1.0);
 }`;
 
 export function createCompositor(canvas: HTMLCanvasElement) {
@@ -70,16 +78,32 @@ export function createCompositor(canvas: HTMLCanvasElement) {
   }
   const videoTexture = texture(0);
   const backgroundTexture = texture(1);
+  const frameTexture = texture(2);
   context.uniform1i(context.getUniformLocation(program, "camera"), 0);
   context.uniform1i(context.getUniformLocation(program, "background"), 1);
+  context.uniform1i(context.getUniformLocation(program, "frameImage"), 2);
   context.pixelStorei(context.UNPACK_FLIP_Y_WEBGL, true);
   let backgroundWidth = 1;
   let backgroundHeight = 1;
+  const frameWidth = 1153;
+  const frameHeight = 768;
+  const openingWidth = 715;
+  const openingHeight = 553;
+  context.uniform4f(context.getUniformLocation(program, "opening"), 93 / frameWidth, 100 / frameHeight, openingWidth / frameWidth, openingHeight / frameHeight);
   context.activeTexture(context.TEXTURE1);
   context.bindTexture(context.TEXTURE_2D, backgroundTexture);
   context.texImage2D(context.TEXTURE_2D, 0, context.RGBA, 1, 1, 0, context.RGBA, context.UNSIGNED_BYTE, new Uint8Array([218, 237, 247, 255]));
+  context.activeTexture(context.TEXTURE2);
+  context.bindTexture(context.TEXTURE_2D, frameTexture);
+  context.texImage2D(context.TEXTURE_2D, 0, context.RGBA, 1, 1, 0, context.RGBA, context.UNSIGNED_BYTE, new Uint8Array([218, 237, 247, 255]));
 
   return {
+    setFrame(image: HTMLImageElement) {
+      if (image.naturalWidth !== frameWidth || image.naturalHeight !== frameHeight) throw new Error("The photo frame has unexpected dimensions.");
+      context.activeTexture(context.TEXTURE2);
+      context.bindTexture(context.TEXTURE_2D, frameTexture);
+      context.texImage2D(context.TEXTURE_2D, 0, context.RGBA, context.RGBA, context.UNSIGNED_BYTE, image);
+    },
     setBackground(image: HTMLImageElement) {
       backgroundWidth = image.naturalWidth;
       backgroundHeight = image.naturalHeight;
@@ -89,9 +113,10 @@ export function createCompositor(canvas: HTMLCanvasElement) {
     },
     draw(video: HTMLVideoElement, settings: Settings) {
       if (!video.videoWidth || !video.videoHeight) return;
-      if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+      const outputHeight = Math.round(video.videoWidth * frameHeight / frameWidth);
+      if (canvas.width !== video.videoWidth || canvas.height !== outputHeight) {
         canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
+        canvas.height = outputHeight;
       }
       context.viewport(0, 0, canvas.width, canvas.height);
       context.activeTexture(context.TEXTURE0);
@@ -103,15 +128,20 @@ export function createCompositor(canvas: HTMLCanvasElement) {
       context.uniform1f(context.getUniformLocation(program, "threshold"), settings.threshold);
       context.uniform1f(context.getUniformLocation(program, "softness"), settings.softness);
       context.uniform1f(context.getUniformLocation(program, "mirror"), settings.mirror ? 1 : 0);
-      const outputAspect = canvas.width / canvas.height;
+      context.uniform1f(context.getUniformLocation(program, "greenScreen"), settings.greenScreen ? 1 : 0);
+      const outputAspect = openingWidth / openingHeight;
       const backgroundAspect = backgroundWidth / backgroundHeight;
       context.uniform2f(context.getUniformLocation(program, "backgroundScale"),
         Math.min(1, outputAspect / backgroundAspect), Math.min(1, backgroundAspect / outputAspect));
+      const cameraAspect = video.videoWidth / video.videoHeight;
+      context.uniform2f(context.getUniformLocation(program, "cameraScale"),
+        Math.min(1, outputAspect / cameraAspect), Math.min(1, cameraAspect / outputAspect));
       context.drawArrays(context.TRIANGLE_STRIP, 0, 4);
     },
     destroy() {
       context.deleteTexture(videoTexture);
       context.deleteTexture(backgroundTexture);
+      context.deleteTexture(frameTexture);
       context.deleteBuffer(buffer);
       context.deleteProgram(program);
     },

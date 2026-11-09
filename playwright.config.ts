@@ -3,6 +3,7 @@ import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: "./tests",
   timeout: 30_000,
+  workers: 1,
   use: {
     baseURL: "http://127.0.0.1:3210",
     browserName: "chromium",
@@ -14,10 +15,11 @@ export default defineConfig({
     url: "http://127.0.0.1:3210",
     reuseExistingServer: false,
     env: {
-      NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:9999",
-      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "test-publishable-key",
+      NEXT_TEST_DIST_DIR: ".next-test-configured",
+      SUPABASE_URL: "http://127.0.0.1:9999",
       SUPABASE_SERVICE_ROLE_KEY: "test-service-key",
-      BOOTH_UPLOAD_CODE: "test-long-upload-code",
+      SUPABASE_PUBLISHABLE_KEY: "test-publishable-key",
+      APP_URL: "http://127.0.0.1:3210",
     },
   },
 });
