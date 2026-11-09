@@ -146,6 +146,10 @@
   .eyebrow { color: #7aa4b9; font-size: 11px; font-weight: bold; letter-spacing: .18em; display: inline-flex; gap: 6px; align-items: center; }
   .hero h1 { font-family: Georgia, serif; font-size: clamp(32px, 4vw, 48px); font-weight: 400; color: #345d76; margin: 14px 0 9px; }
   .hero p, .card-title p, .preview-heading p, .section-heading p, .admin-panel > p { color: #89a1af; font-size: 14px; }
+  .capture-shell .hero { margin: 16px 0 0; padding: 18px 14px 14px; border-radius: 20px; background: radial-gradient(ellipse at 50% 0%, #dceffa 0%, #eef7fc 48%, transparent 85%); }
+  .capture-shell .hero .eyebrow { color: #568eae; font-size: 9px; letter-spacing: .16em; background: #ffffffb3; border: 1px solid #dceaf2; border-radius: 999px; padding: 5px 10px; }
+  .capture-shell .hero h1 { font-size: clamp(26px, 3vw, 36px); line-height: 1.15; margin: 9px 0 6px; color: #2f607d; text-wrap: balance; }
+  .capture-shell .hero > p { font-size: 12px; color: #6b8c9d; }
   .booth-grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 20px; align-items: start; max-width: 1180px; margin: auto; }
   .preview-card, .controls-card, .admin-panel { background: white; border: 1px solid #e6f0f5; border-radius: 18px; box-shadow: 0 10px 35px #8daec314; padding: 24px; }
   .capture-shell .booth-grid { max-width: none; }
@@ -177,7 +181,8 @@
   .camera-row button { min-height: 38px; }
   .camera-help { margin-top: 9px; }
   .account-navigation { display: flex; align-items: center; gap: 8px; }
-  .quota-status { color: #568eae; text-align: center; font-size: 13px; margin: -12px auto 24px; max-width: 720px; }
+  .quota-status { color: #568eae; text-align: center; font-size: 12px; margin: 0 auto 18px; max-width: 720px; }
+  .quota-status > p:first-child:not(.notice) { display: inline-block; padding: 5px 12px; border-radius: 999px; background: #e8f3fa; border: 1px solid #d4e7f2; font-weight: 600; }
   .quota-status p + p { margin-top: 8px; }
   .quota-status button { margin-top: 8px; }
   .background-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; max-height: 240px; overflow-y: auto; }

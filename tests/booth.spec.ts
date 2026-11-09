@@ -80,6 +80,11 @@ test("mobile puts booth first and toggles settings without stopping the camera o
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   const toggle = page.getByRole("button", { name: "Show settings", exact: true });
+  const hero = await page.locator(".hero").boundingBox();
+  expect(hero).not.toBeNull();
+  expect(hero!.height).toBeLessThan(180);
+  await expect(page.locator(".hero")).toHaveCSS("padding-top", "18px");
+  await expect(page.locator(".hero .eyebrow")).toHaveCSS("border-radius", "999px");
   await expect(toggle).toHaveAttribute("aria-expanded", "false");
   await expect(page.getByLabel("CAMERA", { exact: true })).toBeHidden();
   await expect(page.locator(".booth-preview")).toHaveCSS("border-top-width", "0px");
