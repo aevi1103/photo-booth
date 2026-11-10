@@ -97,9 +97,9 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 844, height: 390 }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.getByRole("button", { name: "Take a photo" }).click();
     await expect(page.getByLabel("CAMERA", { exact: true })).toBeDisabled();
-    await expect(page.getByAltText("Your captured photo")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByAltText("A moment at the baby shower")).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText("Saved privately for the host.")).toBeVisible();
-    const dimensions = await page.getByAltText("Your captured photo").evaluate((image: HTMLImageElement) => ({ width: image.naturalWidth, height: image.naturalHeight }));
+    const dimensions = await page.getByAltText("A moment at the baby shower").evaluate((image: HTMLImageElement) => ({ width: image.naturalWidth, height: image.naturalHeight }));
     expect(dimensions).toEqual({ width: 180, height: Math.round(180 * 768 / 1153) });
   });
 }
@@ -196,7 +196,7 @@ test("camera interruption cancels countdown and reconnect restores capture", asy
   await page.waitForTimeout(3200);
   expect(uploads).toBe(0);
   expect(await page.evaluate(() => (window as Window & { boothAudioEvents?: { kind: string }[] }).boothAudioEvents?.filter((event) => event.kind === "shutter").length)).toBe(0);
-  await expect(page.getByAltText("Your captured photo")).toHaveCount(0);
+  await expect(page.getByAltText("A moment at the baby shower")).toHaveCount(0);
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await expect(page.getByRole("button", { name: "Take a photo" })).toBeEnabled();
 });
@@ -227,7 +227,7 @@ test("frame and camera appear in preview and are automatically uploaded without 
       !(border[1] > 200 && border[0] < 30);
   })).toBe(true);
   await capture.click();
-  await expect(page.getByAltText("Your captured photo")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByAltText("A moment at the baby shower")).toBeVisible({ timeout: 10_000 });
   await expect(page.getByText("Saved privately for the host.")).toBeVisible();
   const sounds = await page.evaluate(() => (window as Window & { boothAudioEvents?: { kind: string; time: number; frequency?: number; duration?: number; hasSignal?: boolean }[] }).boothAudioEvents);
   expect(sounds?.map((sound) => sound.kind)).toEqual(["countdown", "countdown", "countdown", "shutter"]);
@@ -236,7 +236,7 @@ test("frame and camera appear in preview and are automatically uploaded without 
   for (let index = 1; index < 4; index++) {
     expect(sounds![index].time - sounds![index - 1].time).toBeGreaterThan(700);
   }
-  const matches = await page.getByAltText("Your captured photo").evaluate((image: HTMLImageElement) => {
+  const matches = await page.getByAltText("A moment at the baby shower").evaluate((image: HTMLImageElement) => {
     const canvas = document.createElement("canvas");
     canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
     const context = canvas.getContext("2d")!;
@@ -250,7 +250,7 @@ test("frame and camera appear in preview and are automatically uploaded without 
       !(border[1] > 180 && border[0] < 50);
   });
   expect(matches).toBe(true);
-  const capturedBytes = await page.getByAltText("Your captured photo").evaluate(async (image: HTMLImageElement) => {
+  const capturedBytes = await page.getByAltText("A moment at the baby shower").evaluate(async (image: HTMLImageElement) => {
     const response = await fetch(image.src);
     return Array.from(new Uint8Array(await response.arrayBuffer()));
   });
@@ -395,13 +395,13 @@ test("voice capture starts one countdown and can capture again after retake", as
   await speak("Capture!");
   await speak("capture");
   await expect(page.getByRole("button", { name: "Get ready" })).toBeDisabled();
-  await expect(page.getByAltText("Your captured photo")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByAltText("A moment at the baby shower")).toBeVisible({ timeout: 10_000 });
   await speak("capture");
-  await expect(page.getByAltText("Your captured photo")).toBeVisible();
+  await expect(page.getByAltText("A moment at the baby shower")).toBeVisible();
   await page.getByRole("button", { name: "Retake" }).click();
   await expect(page.getByRole("button", { name: "Take a photo" })).toBeEnabled();
   await speak("capture");
-  await expect(page.getByAltText("Your captured photo")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByAltText("A moment at the baby shower")).toBeVisible({ timeout: 10_000 });
   await page.getByRole("button", { name: "Stop voice capture" }).click();
   await expect(page.getByText("Voice control is off.")).toBeVisible();
   const audio = await page.evaluate(() => (window as Window & { boothAudioEvents?: { kind: string }[] }).boothAudioEvents);
@@ -531,18 +531,18 @@ test("authenticated gallery browses pages and refreshes with the booth theme", a
     await expect(page.getByRole("heading", { name: "Photo gallery" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Photo gallery" })).toHaveCSS("color", "rgb(52, 93, 118)");
     await expect(page.getByRole("link", { name: "Back to booth" })).toHaveCSS("color", "rgb(85, 142, 174)");
-    await expect(page.getByAltText("Saved photo newest.jpg")).toBeVisible();
-    await expect.poll(() => page.getByAltText("Saved photo newest.jpg").evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(1153);
+    await expect(page.getByAltText("Baby-shower memory newest.jpg")).toBeVisible();
+    await expect.poll(() => page.getByAltText("Baby-shower memory newest.jpg").evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(1153);
     await expect(page.getByRole("link", { name: "Open photo newest.jpg" })).toHaveAttribute("target", "_blank");
     await page.getByRole("button", { name: "Load more photos" }).click();
-    await expect(page.getByAltText("Saved photo older.jpg")).toBeVisible();
+    await expect(page.getByAltText("Baby-shower memory older.jpg")).toBeVisible();
     await expect(page.getByRole("button", { name: "Load more photos" })).toHaveCount(0);
     await page.getByRole("button", { name: "Refresh photos" }).click();
-    await expect(page.getByAltText("Saved photo older.jpg")).toHaveCount(0);
+    await expect(page.getByAltText("Baby-shower memory older.jpg")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Sign out", exact: true })).toBeVisible();
     expect(await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }))).not.toContain("access_token");
     await page.reload();
-    await expect(page.getByAltText("Saved photo newest.jpg")).toBeVisible();
+    await expect(page.getByAltText("Baby-shower memory newest.jpg")).toBeVisible();
     expect(requests).toBeGreaterThanOrEqual(4);
   });
 

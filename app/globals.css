@@ -174,7 +174,9 @@
   .upload-result { text-align: center; color: #6b8c9d; margin-top: 13px; font-size: 12px; }
   .card-title { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
   .icon-bubble { background: #e8f5fb; color: #79aec8; border-radius: 11px; padding: 11px; }
-  .controls-card label:not(.checkbox), .login label { display: block; color: #7c9aaa; font-weight: bold; font-size: 10px; letter-spacing: .12em; margin: 20px 0 9px; }
+  .controls-card label:not(.checkbox), .controls-card .backdrop-label, .login label { display: block; color: #7c9aaa; font-weight: bold; font-size: 10px; letter-spacing: .12em; margin: 20px 0 9px; }
+  .controls-card .background-list { border: 0; min-width: 0; padding: 0; }
+  .controls-card .background-list legend { grid-column: 1 / -1; }
   select, input:not([type="checkbox"]):not([type="range"]):not([type="color"]):not([type="file"]) { width: 100%; border: 1px solid #dcebf2; border-radius: 8px; padding: 10px; color: #416a80; background: #fbfdff; font-size: 13px; }
   .camera-row { display: flex; gap: 7px; }
   .camera-row select { min-width: 0; }
