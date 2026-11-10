@@ -1,48 +1,89 @@
 # Little Cloud Photo Booth
 
-A Next.js baby-shower booth. The live camera is placed inside the supplied decorative frame; the reviewed, downloaded, and uploaded JPEG includes that same frame. Optionally replace a green screen with a local backdrop. Camera processing happens in the browser, and photos can be saved privately to Supabase.
+A Next.js photo booth for a baby shower. It places the live camera preview inside a decorative frame and saves the reviewed image, including the frame, as a private JPEG in Supabase Storage. An optional green-screen effect can replace the background with an image bundled with the app.
 
-The app captures an HDMI **video frame**, not a full-resolution camera still. It does not trigger the camera shutter. The frame uses the aspect ratio of the provided artwork; the camera feed is center-cropped to fill its opening.
+> **Camera note:** The booth captures a frame from the browser's video stream. It does not trigger a camera's still-photo shutter or capture a full-resolution camera still. The camera feed is center-cropped to fit the frame opening.
 
-## Run and test locally
+## Set up and run locally
 
-Install Node.js 20.9 or later and run:
+You will need Node.js 20.9 or later, a Supabase project, and a Google OAuth client. Camera access requires `localhost` or HTTPS; Chrome or Edge are recommended for setup.
+
+### 1. Set up Supabase
+
+In the Supabase SQL Editor, run **all** of [`supabase/setup.sql`](supabase/setup.sql). Run it for new installs and upgrades. It is rerunnable, preserves photos and existing role assignments, creates the user profiles and upload reservations, and keeps the `photos` bucket private. The restrictive Storage policy prevents direct client access; photo uploads and gallery access go through the app server.
+
+### 2. Enable Google sign-in
+
+In **Supabase → Authentication → Sign In / Providers**, enable Google and configure its OAuth credentials.
+
+In **Authentication → URL Configuration**:
+
+- Set the Site URL to your app's origin (locally, `http://localhost:3000`).
+- Add the exact redirect URL `http://localhost:3000/auth/callback`. Add your production callback after deployment: `https://YOUR-APP.vercel.app/auth/callback`.
+
+In Google Cloud, the authorized redirect URI is the Supabase provider callback, `https://YOUR-PROJECT.supabase.co/auth/v1/callback`—not the app's `/auth/callback` URL.
+
+### 3. Configure local environment
+
+Copy the example file and add your Supabase project values:
+
+```shell
+cp .env.example .env.local
+```
+
+Set these values in `.env.local`:
+
+| Variable | Value |
+| --- | --- |
+| `SUPABASE_URL` | Your Supabase project URL. |
+| `SUPABASE_PUBLISHABLE_KEY` | The publishable key from **Project Settings → API Keys**. Legacy anon keys also work. |
+| `SUPABASE_SERVICE_ROLE_KEY` | The server secret/service-role key. Keep it private; never expose it to the browser. |
+| `APP_URL` | `http://localhost:3000` for local development. In production, use the app's exact HTTPS origin. |
+
+For existing deployments, `NEXT_PUBLIC_SUPABASE_URL` is accepted if `SUPABASE_URL` is unset. `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are also accepted. Restart the dev server after changing environment variables. Never commit `.env.local` or expose the service-role key.
+
+### 4. Install and start the app
+
+From the repository root:
 
 ```shell
 npm install
 npm run dev
 ```
 
-Configure Supabase authentication and storage using the steps below, then open `http://localhost:3000` in Chrome or Edge and sign in with Google. Click **Connect** and allow camera access. Choose the Cam Link from the dropdown and click **Connect** again. The frame appears around the camera feed without needing a green screen. Captures upload automatically; download is available as a fallback if saving fails.
+Open [http://localhost:3000](http://localhost:3000), choose **Continue with Google**, and sign in. Allow camera access, choose a camera, then press **Connect**. If using a Cam Link, choose it from the camera list and press **Connect** again.
 
-For hands-free capture, click **Enable voice capture**, allow microphone access, and say **“capture”** to start the three-second countdown. Voice control is off by default and continues listening until stopped or the page closes. It ignores commands while the countdown or photo review is active; use **Retake** before the next command. Browser speech-recognition support varies, may require internet, and may send microphone audio to a browser-provided speech service. If unavailable, use **Take a photo** instead.
+### 5. Take and save a photo
 
-Both manual and voice capture play three short countdown beeps (3, 2, 1), followed by a shutter sound when the image is captured. Sounds are generated locally in the browser, with no audio downloads. **Connect** and **Enable voice capture** unlock playback for mobile autoplay restrictions; keep the device volume on. If audio is blocked or unavailable, the booth shows a warning but still captures and saves photos. The shutter confirms capture, not successful cloud saving; wait for the save confirmation.
+Choose **Take a photo** or enable voice capture and say **“capture”**. The booth counts down for three seconds, shows a review, and uploads the framed JPEG automatically. Wait for the save confirmation; the shutter sound means the image was captured, not necessarily uploaded.
 
-If voice recognition reports a network error, it could not reach the browser's speech service; this does not necessarily mean your microphone is broken. If using VS Code's integrated browser, open the booth URL in standalone Google Chrome instead. Otherwise check your connection and whether a VPN, firewall, or browser policy blocks the speech service. The app retries briefly and then shows an error; you can enable it again or take a photo manually. This feature does not use Supabase.
+If saving fails, choose **Retry saving** or **Download photo**. Saving disables **Retake** until the upload finishes. Use **View gallery** to see saved photos.
 
-The provided frame is [baby-shower.png](public/frames/baby-shower.png). The supplied reference had an opaque checkerboard, so it was converted to transparency for the camera opening. Its artwork and camera-opening coordinates are designed as a pair; replacing this file with a different layout also requires adjusting the compositor coordinates.
+## Using the booth
 
-To replace a green screen within the frame, turn on **Replace green screen** and select a backdrop. JPEG, PNG, and WebP files in [public/images](public/images) become available in the picker. Add files before starting the server or rebuilding/redeploying the app; the list is cached and bundled as part of the application. Images in `public` are publicly accessible when deployed, so do not include sensitive images. Adjust the green-screen settings for your lighting; avoid green clothing and shadows.
+### Voice capture and sounds
 
-## Google sign-in, roles, and Supabase photos
+Voice capture is off by default. Choose **Enable voice capture** and allow microphone access to use it. It keeps listening until stopped or the page closes, and ignores commands during a countdown or while a photo is under review; choose **Retake** before the next voice capture. Speech recognition support varies by browser, may require internet, and may send microphone audio to a browser-provided speech service. It does not use Supabase. If it is unavailable, use manual capture.
 
-Google sign-in is required before opening the booth or gallery. Supabase stores private JPEGs; backgrounds and the frame remain bundled locally. **Booth upload codes are no longer used** and `BOOTH_UPLOAD_CODE` can be removed from local/Vercel variables.
+Manual and voice capture play three countdown beeps and a shutter sound. Sounds are generated locally in the browser. **Connect** and **Enable voice capture** unlock playback on devices with autoplay restrictions. If sound is blocked, capture and saving still work.
 
-1. Run **all of** [supabase/setup.sql](supabase/setup.sql) in the Supabase SQL editor, including when upgrading an existing booth. It is rerunnable, preserves photos and existing role assignments, creates user profiles and upload reservations, and keeps the `photos` bucket private. A restrictive Storage policy blocks direct client access to this bucket even if older permissive policies exist; all booth photo access goes through the server.
-2. Copy [.env.example](.env.example) to `.env.local` (or update your existing ignored environment file), then set:
-   - `SUPABASE_URL`: the project URL.
-   - `SUPABASE_PUBLISHABLE_KEY`: the publishable key from **Project Settings → API Keys** (legacy anon keys also work). Existing `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` or `NEXT_PUBLIC_SUPABASE_ANON_KEY` variables are accepted too.
-   - `SUPABASE_SERVICE_ROLE_KEY`: the server secret/service-role key, never a publishable key.
-   - `APP_URL`: `http://localhost:3000` locally, or your exact Vercel HTTPS origin in production. This pins OAuth callbacks and same-origin upload/sign-out checks to your public app address.
-   The prior `NEXT_PUBLIC_SUPABASE_URL` is accepted if `SUPABASE_URL` is unset. Restart after changing variables. Never commit secrets or expose the service-role key to the browser.
-3. In **Supabase → Authentication → Sign In / Providers**, enable Google. In **URL Configuration**, set the Site URL to your deployed app origin and add exact redirect URLs `http://localhost:3000/auth/callback` and `https://YOUR-APP.vercel.app/auth/callback`. Google Cloud's authorized OAuth redirect URI is the Supabase provider callback (`https://YOUR-PROJECT.supabase.co/auth/v1/callback`), not the app callback.
-4. Open the app and choose **Continue with Google**. Sessions use server-managed HttpOnly cookies and are verified with Supabase before protected pages and API calls. **Sign out** ends this browser's session. Ordinary users see their remaining uploads and only their own gallery; admins see all event photos.
-5. Captures upload automatically, including the frame, into `photos/<user-id>/<random-id>.jpg`. Saving disables Retake until it completes. On failure, review shows **Download photo** as a fallback and **Retry saving**. The gallery lists newest photos first in batches of 24. Click a photo to open it full-size. Signed links expire after 15 minutes; **Refresh photos** renews them. Signing out cannot revoke links already opened or shared before expiry.
+If voice recognition reports a network error, it could not reach the browser's speech service; this does not necessarily mean the microphone is broken. Try standalone Chrome instead of VS Code's integrated browser, check the network, and retry voice capture. A VPN, firewall, or browser policy may block the service.
 
-### Assign an admin
+### Backdrops
 
-Sign in once to create the account, then use **Table Editor → profiles** to change that account's `role` from `user` to `admin`. Match `profiles.id` to the account UUID in **Authentication → Users**. Or run this in the SQL editor, replacing the example address:
+To replace a green screen, enable **Replace green screen** and choose a backdrop. JPEG, PNG, and WebP files in [`public/images`](public/images) appear in the picker. Add files before starting the server or rebuilding/redeploying; the list is cached and bundled with the app. Files in `public` are publicly accessible, so do not put sensitive images there. Adjust the green-screen settings for the lighting and avoid green clothing and shadows.
+
+The frame artwork in [`public/frames/baby-shower.png`](public/frames/baby-shower.png) and the camera-opening coordinates in [`lib/compositor.ts`](lib/compositor.ts) are a matched pair. If you replace the frame with a different layout, update the compositor coordinates too.
+
+### Gallery and access
+
+Google sign-in is required for the booth and gallery. Ordinary users see their own photos; admins can see all event photos. The gallery shows newest photos first in pages of 24. Signed image links expire after 15 minutes; choose **Refresh photos** to renew them. Signing out cannot revoke links that have already been opened or shared.
+
+## Roles, upload limits, and recovery
+
+### Make an account an admin
+
+Sign in once to create the account. In **Supabase → Table Editor → profiles**, change that account's `role` from `user` to `admin`; match `profiles.id` to the account UUID in **Authentication → Users**. Or run this in the SQL Editor, replacing the example email:
 
 ```sql
 update public.profiles
@@ -50,46 +91,70 @@ set role = 'admin'
 where id = (select id from auth.users where email = 'host@example.com');
 ```
 
-Set `role = 'user'` to revoke admin access. Users cannot edit roles through the app or Supabase client, and role claims in Google/user metadata are ignored. Role changes are read from the database, not cached in OAuth tokens. The booth refreshes the allowance on browser focus; reload to update immediately.
+Set `role` back to `user` to revoke admin access. Users cannot edit roles through the app or Supabase client, and role claims in Google/user metadata are ignored. Role changes are read from the database, not cached in OAuth tokens. The booth refreshes the allowance when the browser regains focus; reload to update immediately.
 
-### Upload allowance and recovery
+### Understand upload allowances
 
-Non-admins have a **lifetime total of 20 uploads per account**, not 20 per session/day. Admins have no total cap. Reserved/in-progress uploads count toward the limit, and PostgreSQL serializes reservations per user so concurrent requests and multiple tabs cannot exceed it. Upload allowance is checked server-side; editing the UI cannot bypass it. At zero, manual and voice capture are disabled, but gallery access remains available. Deleting a stored image does not reset a user's lifetime allowance.
+Each non-admin account can save **20 photos total for the lifetime of the account**; admins have no total cap. Reserved and in-progress uploads count toward the limit. The database serializes reservations so concurrent uploads across requests and tabs cannot exceed it. The limit is enforced server-side, and deleting an image does not restore an upload.
 
-Definite Storage rejections release an unused reservation. Ambiguous network/server failures retain it conservatively because the object may have been stored. For an interrupted upload, a trusted operator can compare `public.photo_uploads` rows with Storage and release a **known finished, failed request with no object** using `select public.release_photo_upload('UPLOAD-UUID');` in the SQL editor. Do not release slots while requests may still be running. Do not delete uploaded reservation records to bypass normal accounting.
+At zero, manual and voice capture are disabled, but gallery access remains available. Definite Storage rejections release an unused reservation. An ambiguous network/server failure keeps its reservation because the photo may have been stored.
 
-Photos from the older code-based booth have no trustworthy user ownership. They remain intact and visible to admins only; they are not assigned to Google accounts automatically or counted toward a user's new allowance. Manage/delete photos through **Storage → photos** in the Supabase dashboard.
+For an interrupted upload, a trusted operator can compare `public.photo_uploads` with Storage. Release a reservation only after confirming the request has finished and no object exists:
 
-The server validates upload type, size and JPEG signature and retains a shared 60-uploads-per-minute throughput limiter (including for admins). It does not decode or scan uploaded images. Before public deployment configure edge rate limiting for authentication and `/api/` endpoints, monitor usage, and clearly tell guests about photo storage. Any Google account allowed by your Supabase/Google provider can sign in; the 20-photo limit is per account, not an event invitation system.
+```sql
+select public.release_photo_upload('UPLOAD-UUID');
+```
+
+Do not release reservations for requests that may still be running or delete uploaded reservation records to bypass normal accounting.
+
+Photos from the older code-based booth have no trustworthy user ownership. They remain intact, visible to admins only, and are not automatically assigned to Google accounts or counted toward the new allowance. Manage or delete them through **Supabase → Storage → photos**.
+
+Uploads are limited to JPEGs up to 4 MiB and checked on the server for size and JPEG signature. A shared server-side limiter allows 60 upload attempts per minute, including for admins. Images are not decoded or scanned. Any Google account allowed by the configured Supabase/Google provider can sign in; the allowance is per account, not an event invitation system. Before public deployment, configure edge rate limiting for authentication and `/api/` endpoints, monitor usage, and tell guests how their photos are stored.
 
 ## Camera setup
 
+Camera access requires HTTPS or `localhost`. A development server opened on a phone over a computer's plain-HTTP LAN address will not provide a secure context; use the deployed HTTPS URL or a trusted HTTPS development setup.
+
 ### Phones and tablets
 
-On narrow screens the photo booth appears first. Settings are collapsed below it; tap **Show settings** to choose/connect a camera or adjust the backdrop, then **Hide settings** to keep them out of the way. Hiding settings preserves your selections and leaves the camera running. Desktop settings remain visible beside the booth.
+Open the deployed HTTPS URL directly in Safari on iPhone/iPad or Chrome on Android, allow camera access, choose **Front camera (selfie)** or **Rear camera**, and press **Connect**. On narrow screens, settings are collapsed below the booth; **Show settings** and **Hide settings** preserve selections and do not stop the camera. Use **Retake** before switching cameras after a capture. If the camera pauses after switching apps, return and press **Connect** again.
 
-Open the deployed **HTTPS** URL directly in Safari on iPhone/iPad or Chrome on Android, allow camera permission, choose **Front camera (selfie)** or **Rear camera**, and press **Connect**. Use **Retake** before switching cameras after a capture. The preview stays inline and uses the same frame and JPEG upload flow as desktop. Portrait video is center-cropped into the artwork's fixed opening; turning the phone sideways can give more room for groups. If the camera pauses after switching apps, return and press **Connect** again. Permission errors include recovery instructions.
+Mobile built-in cameras are the supported baseline. Using a Fuji/Cam Link directly with a phone or tablet is not guaranteed; it depends on USB host support, power, adapters, OS, and browser. If the device exposes it as a camera, it appears in the camera list. Otherwise use the phone's camera or connect the Cam Link to a computer. Voice recognition support is separate from camera support.
 
-Opening a development server through a phone using plain HTTP and a computer's LAN IP does **not** provide the secure context camera access requires; use the Vercel HTTPS URL or a trusted HTTPS development setup. Mobile built-in cameras are the supported baseline. Connecting the Fuji/Cam Link directly to a phone or tablet is not guaranteed: USB host support, power, adapters, OS, and browser must expose it as a camera. If it is available it appears in the camera list after permission; otherwise use the phone camera or connect Cam Link to a computer. Voice recognition support is separate from camera support.
+### Fujifilm X-T3 and Cam Link
 
-Automated mobile-viewport tests use synthetic camera streams; actual iOS/Android camera permissions, hardware, and external Cam Link compatibility still require on-device testing before the event.
+Connect the camera's micro-HDMI port to the Elgato Cam Link, then connect the Cam Link to the computer. Start with a compatible 1080p output mode and turn off **HDMI OUTPUT INFO DISPLAY** in the camera's movie settings. Close other camera applications that may hold the Cam Link. Provide sustained power, prevent sleep, and test camera temperature and stability for the whole event.
 
-Connect the Fujifilm X-T3's micro-HDMI port to the Elgato Cam Link, then connect the Cam Link to the computer. Choose a compatible output mode, starting with 1080p, and turn off **HDMI OUTPUT INFO DISPLAY** in the camera's movie settings. Close other camera applications if they hold the Cam Link. Provide sustained power, prevent sleep, and test camera temperature and stability for the whole event. The browser requires HTTPS or localhost for camera access.
+Automated mobile-viewport tests use synthetic camera streams. Test actual iOS/Android camera permissions, hardware, and external Cam Link compatibility on the target devices before the event.
 
-## Deploy on Vercel
+## Deploy to Vercel
 
-1. In Vercel choose **Add New → Project**, import this GitHub repository, and select the **Next.js** framework preset. Use the repository root and the default install/build settings (`npm install`, `npm run build`). No custom start command, Dockerfile, or `vercel.json` is needed.
-2. Set `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, and `APP_URL` in the project's **Settings → Environment Variables**. Use `https://YOUR-APP.vercel.app` as `APP_URL` for Production (or your custom domain). If the domain is not known until the first deployment, set it afterward and redeploy. Keep the server secret server-only.
-3. In Supabase **Authentication → URL Configuration**, set the Site URL to that production origin and add `https://YOUR-APP.vercel.app/auth/callback` to Redirect URLs. Keep `http://localhost:3000/auth/callback` for local development. Google Cloud continues using Supabase's provider callback; it does not change to Vercel.
-4. Run [supabase/setup.sql](supabase/setup.sql) if not already applied, then deploy. The same Supabase project, existing photos, admin roles, and user allowances are retained. Git pushes deploy automatically.
-5. Test Google sign-in/sign-out, remaining uploads, gallery, camera and saving on the Vercel HTTPS URL. If switching from another host, verify this deployment before shutting down the old service.
+1. Import the GitHub repository in Vercel, choose the **Next.js** preset, and use the repository root and default install/build commands (`npm install`, `npm run build`). No custom start command, Dockerfile, or `vercel.json` is needed.
+2. Set `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, and `APP_URL` in **Settings → Environment Variables**. Set `APP_URL` to the exact production HTTPS origin, such as `https://YOUR-APP.vercel.app`. Keep the service-role key server-only.
+3. In Supabase **Authentication → URL Configuration**, set the Site URL to that production origin and add `https://YOUR-APP.vercel.app/auth/callback` to Redirect URLs. Keep `http://localhost:3000/auth/callback` for local development. Google Cloud continues to use the Supabase provider callback, not a Vercel callback.
+4. Run [`supabase/setup.sql`](supabase/setup.sql) if it has not already been applied, then deploy. Existing photos, admin roles, and allowances remain in the same Supabase project. Git pushes deploy automatically.
+5. Test Google sign-in/sign-out, allowances, gallery, camera, and photo saving on the deployed HTTPS URL before an event or before shutting down another host.
 
-Vercel Functions have a [4.5 MB request limit](https://vercel.com/docs/functions/limitations#request-body-size). The app therefore accepts JPEGs up to **4 MiB (4,194,304 bytes)**, checked in both browser and server. Larger captures offer the download fallback without sending an oversized request or consuming an upload slot. The existing private Supabase bucket may retain its 8 MiB ceiling; the application enforces the lower limit, so no database migration is needed for this hosting change.
+Vercel Functions have a [4.5 MB request limit](https://vercel.com/docs/functions/limitations#request-body-size), so the app accepts JPEGs up to **4 MiB (4,194,304 bytes)**. The browser and server both enforce this limit. Larger captures offer a download fallback without sending an oversized request or consuming an upload slot. The private Supabase bucket may retain its 8 MiB limit; the app enforces the lower limit, so no database change is needed.
 
-For Preview deployments, use their exact HTTPS origin as `APP_URL` and explicitly allowlist their callback in Supabase; do not reuse a production `APP_URL` on a different preview domain. Avoid broadly wildcarding untrusted preview URLs. Redeploy after changing environment variables. Bundled backdrops/frame updates require a new deployment; runtime photo writes go to Supabase, not Vercel's filesystem.
+For Preview deployments, use that deployment's exact HTTPS origin as `APP_URL` and explicitly allowlist its callback in Supabase. Do not reuse the production `APP_URL` on a different preview domain or broadly wildcard untrusted preview URLs. Redeploy after changing environment variables. Frame and backdrop changes require a new deployment; runtime photo writes go to Supabase, not Vercel's filesystem.
 
-Vercel Hobby may suit a personal, non-commercial baby shower within its current plan limits; check [Vercel pricing](https://vercel.com/pricing) and usage before the event. Free hosting is not unlimited, and Supabase has its own storage/usage limits.
+Check [Vercel pricing](https://vercel.com/pricing) and usage before the event. Free hosting is not unlimited, and Supabase has its own storage and usage limits.
 
-## Verification
+## Development and tests
 
-Run `npm run lint`, `npm run build`, and `npm test`. Tests use simulated camera streams, a local mocked Supabase Auth/Storage HTTP service and an in-memory PostgreSQL engine (PGlite) that executes the actual setup SQL. Coverage includes OAuth cookies, session refresh, protected routes, role privilege restrictions, direct Storage bypass prevention, gallery ownership, concurrent 20-upload enforcement, admin exemption, and the remaining-allowance UI. Real Google OAuth credentials, device hardware and the live Supabase migration must still be verified separately; automated tests do not alter your live project.
+```shell
+npm run dev       # Start the local app
+npm run lint      # Run ESLint
+npm run build     # Create a production build
+npm test          # Run the Playwright suite
+```
+
+Run a specific test file or a named test:
+
+```shell
+npm test -- tests/auth.spec.ts
+npm test -- tests/auth.spec.ts -g "database migration is rerunnable"
+```
+
+Playwright uses Chrome/Chromium with synthetic camera and microphone inputs, a local mocked Supabase Auth/Storage service, and PGlite to execute the real `supabase/setup.sql`. Coverage includes OAuth cookies, session refresh, protected routes, role restrictions, Storage access, gallery ownership, concurrent upload limits, and booth capture. Tests do not alter your live Supabase project. Real Google OAuth credentials and device-specific camera behavior require separate verification.
