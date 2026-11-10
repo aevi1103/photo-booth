@@ -1,5 +1,4 @@
 import { createStore, type StoreApi } from "zustand/vanilla";
-import type { PhotoQuota } from "@/lib/photo-quota";
 
 export type Backdrop = { name: string; url: string };
 export type Photo = { url: string; blob: Blob };
@@ -32,10 +31,6 @@ export type BoothState = {
 	message: string;
 	countdown: number | null;
 	photo: Photo | null;
-	uploadState: string;
-	uploadStatus: "idle" | "saving" | "saved" | "failed";
-	quota: PhotoQuota | null;
-	quotaError: string;
 };
 
 export type BoothStore = StoreApi<BoothState>;
@@ -54,9 +49,5 @@ export function createBoothStore(backgrounds: Backdrop[]): BoothStore {
 		message: "",
 		countdown: null,
 		photo: null,
-		uploadState: "",
-		uploadStatus: "idle",
-		quota: null,
-		quotaError: "",
 	}));
 }

@@ -238,3 +238,75 @@
 @media (max-width: 800px) {
   .mobile-settings-toggle { display: inline-flex; width: 100%; min-height: 44px; }
 }
+@media (min-width: 801px) {
+  .capture-shell { padding-inline: clamp(16px, 2vw, 32px); }
+  .capture-shell .topbar { height: 64px; }
+  .capture-shell .hero { margin-top: 8px; padding: 8px 12px 10px; }
+  .capture-shell .hero h1 { font-size: clamp(24px, 2.4vw, 30px); margin: 4px 0; }
+  .capture-shell .quota-status { margin-bottom: 10px; }
+  .capture-shell .booth-grid { grid-template-columns: minmax(0, 1fr) minmax(230px, 280px); gap: 16px; }
+  .capture-shell .preview-heading { margin-bottom: 10px; }
+  .capture-shell .actions { margin-top: 12px; }
+  .capture-shell .controls-card { padding: 16px; }
+  .capture-shell .controls-card .card-title { margin-bottom: 16px; }
+  .capture-shell .controls-card .icon-bubble { padding: 8px; }
+  .capture-shell .controls-card label:not(.checkbox),
+  .capture-shell .controls-card .backdrop-label { margin: 14px 0 7px; }
+  .capture-shell .controls-card .checkbox { margin-top: 14px; }
+  .capture-shell .controls-card details { margin-top: 16px; }
+  .capture-shell .controls-card .camera-help { margin-top: 6px; }
+}
+.preview-tools { display: flex; align-items: center; gap: 8px; }
+.photo-mode-button { min-height: 34px; padding-inline: 10px; color: #558eae; }
+.photo-mode-button svg { width: 15px; height: 15px; }
+.capture-shell:has(.booth-preview.is-photo-mode) {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  width: 100vw;
+  max-width: none;
+  height: 100vh;
+  height: 100dvh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #000;
+}
+.capture-shell:has(.booth-preview.is-photo-mode) > :not(.booth-grid),
+.capture-shell:has(.booth-preview.is-photo-mode) .controls-card,
+.booth-preview.is-photo-mode .preview-heading {
+  display: none;
+}
+.capture-shell:has(.booth-preview.is-photo-mode) .booth-grid {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+.booth-preview.is-photo-mode {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.booth-preview.is-photo-mode .preview {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  aspect-ratio: auto !important;
+  border-radius: 0;
+  background: #000;
+}
+.booth-preview.is-photo-mode .preview canvas { object-fit: contain; }
+.booth-preview.is-photo-mode .actions {
+  position: absolute;
+  z-index: 2;
+  right: 12px;
+  bottom: max(20px, env(safe-area-inset-bottom));
+  left: 12px;
+  margin: 0;
+}

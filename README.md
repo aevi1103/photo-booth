@@ -65,6 +65,8 @@ If saving fails, choose **Retry saving** or **Download photo**. Saving disables 
 
 Voice capture is off by default. Choose **Enable voice capture** and allow microphone access to use it. It keeps listening until stopped or the page closes, and ignores commands during a countdown or while a photo is under review; choose **Retake** before the next voice capture. Speech recognition support varies by browser, may require internet, and may send microphone audio to a browser-provided speech service. It does not use Supabase. If it is unavailable, use manual capture.
 
+The listening status and latest recognized words appear below the controls. The booth reacts as soon as it hears the word **capture**, without waiting for a finalized transcript; updates to the same spoken command do not trigger another photo. If no words appear, check Chrome's selected microphone and site microphone permission. If words appear but no countdown starts, make sure the camera is ready, uploads are still available, and no photo is under review.
+
 Manual and voice capture play three countdown beeps and a shutter sound. Sounds are generated locally in the browser. **Connect** and **Enable voice capture** unlock playback on devices with autoplay restrictions. If sound is blocked, capture and saving still work.
 
 If voice recognition reports a network error, it could not reach the browser's speech service; this does not necessarily mean the microphone is broken. Try standalone Chrome instead of VS Code's integrated browser, check the network, and retry voice capture. A VPN, firewall, or browser policy may block the service.

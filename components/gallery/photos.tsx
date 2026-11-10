@@ -1,39 +1,61 @@
 "use client";
 
 import Image from "next/image";
-import type { GalleryPhoto } from "@/components/gallery/use-gallery";
+import type { GalleryState } from "@/components/gallery/use-gallery";
 import { Button } from "@/components/ui/button";
 
-export function GalleryPhotos({
-	photos,
-	nextOffset,
-	loading,
-	failedImages,
-	onRefresh,
-	onLoadMore,
-	onImageError,
-}: {
-	photos: GalleryPhoto[];
-	nextOffset: number | null;
-	loading: boolean;
-	failedImages: string[];
-	onRefresh: () => void;
-	onLoadMore: (offset: number) => void;
-	onImageError: (name: string) => void;
-}) {
+export function GalleryPhotos({ gallery }: { gallery: GalleryState }) {
+	const {
+		photos,
+		isPending,
+		loadError,
+		staleError,
+		isRefreshing,
+		isFetchingNextPage,
+		isFetching,
+		isStale,
+		updatedAt,
+		hasNextPage,
+		loadMore,
+		refresh,
+		failedUrls,
+		markImageFailed,
+	} = gallery;
+
 	return (
 		<section className="preview-card p-5" aria-label="Saved photos">
 			<div className="flex flex-wrap items-center justify-between gap-3 mb-5">
-				<p role="status">
-					{photos.length} {photos.length === 1 ? "photo" : "photos"} loaded
-				</p>
+				<div>
+					<p role="status">
+						{isPending
+							? "Loading photos..."
+							: `${photos.length} ${photos.length === 1 ? "photo" : "photos"} loaded`}
+						{isRefreshing && " · Refreshing…"}
+					</p>
+					{updatedAt > 0 && (
+						<p className="small">
+							Updated {new Date(updatedAt).toLocaleTimeString()}
+							{isStale && !isFetching && " · may be out of date"}
+						</p>
+					)}
+				</div>
 				<div className="flex gap-2">
-					<Button variant="outline" disabled={loading} onClick={onRefresh}>
+					<Button variant="outline" disabled={isFetching} onClick={refresh}>
 						Refresh photos
 					</Button>
 				</div>
 			</div>
-			{!photos.length && !loading && (
+			{loadError && (
+				<p className="notice" role="alert">
+					{loadError.message}
+				</p>
+			)}
+			{staleError && (
+				<p className="notice" role="alert">
+					{staleError.message} Showing previously loaded photos.
+				</p>
+			)}
+			{!isPending && !loadError && !photos.length && (
 				<p className="py-12 text-center">
 					No photos yet. Capture a photo in the booth to start making memories.
 				</p>
@@ -60,12 +82,12 @@ export function GalleryPhotos({
 								height={768}
 								unoptimized
 								referrerPolicy="no-referrer"
-								onError={() => onImageError(photo.name)}
+								onError={() => markImageFailed(photo.url)}
 							/>
 						</a>
 						<figcaption className="p-3 text-sm">
 							{new Date(photo.createdAt).toLocaleString()}
-							{failedImages.includes(photo.name) && (
+							{failedUrls.has(photo.url) && (
 								<p role="alert">
 									Image unavailable or link expired. Refresh photos to retry.
 								</p>
@@ -75,17 +97,18 @@ export function GalleryPhotos({
 				))}
 			</div>
 			<div className="mt-5 text-center">
-				{loading && <p role="status">Loading photos...</p>}
-				{nextOffset !== null && (
-					<Button disabled={loading} onClick={() => onLoadMore(nextOffset)}>
+				{isFetchingNextPage && <p role="status">Loading more photos...</p>}
+				{hasNextPage && (
+					<Button disabled={isFetching} onClick={loadMore}>
 						Load more photos
 					</Button>
 				)}
 			</div>
 			<p className="small mt-4">
 				Click a photo to open the full image. Private image links expire after
-				15 minutes; refresh to renew them. Signing out does not revoke image
-				links already opened or shared.
+				15 minutes; they renew automatically while this page is open, or refresh
+				to renew them now. Signing out does not revoke image links already
+				opened or shared.
 			</p>
 		</section>
 	);

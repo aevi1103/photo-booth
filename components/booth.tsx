@@ -17,11 +17,11 @@ export function Booth({ backgrounds }: { backgrounds: Backdrop[] }) {
 		videoRef,
 		canvasRef,
 		quota,
-		quotaError,
-		refreshQuota,
+		canCapture,
 		startCountdown,
 		connect,
 		upload,
+		uploadView,
 		retake,
 		prepareSound,
 	} = useBoothController(backgrounds);
@@ -53,27 +53,38 @@ export function Booth({ backgrounds }: { backgrounds: Backdrop[] }) {
 				<p>Strike a pose, pick a backdrop, and make a little memory.</p>
 			</section>
 			<div className="quota-status" aria-live="polite">
-				{quota ? (
+				{quota.data ? (
 					<p>
-						{quota.role === "admin"
+						{quota.data.role === "admin"
 							? "Admin account · Unlimited photo uploads"
-							: `${quota.remaining} of 20 photo uploads remaining`}
+							: `${quota.data.remaining} of 20 photo uploads remaining`}
+						{quota.isRefetchError && " (last known)"}
+						{quota.isFetching && (
+							<span className="small" aria-hidden="true">
+								{" "}
+								· updating…
+							</span>
+						)}
 					</p>
 				) : (
-					!quotaError && <p>Loading your upload allowance...</p>
+					quota.isPending && <p>Loading your upload allowance...</p>
 				)}
-				{quota?.remaining === 0 && (
+				{quota.data?.remaining === 0 && (
 					<p>
 						You have reached your total of 20 photos. You can still view your
 						memories in the gallery.
 					</p>
 				)}
-				{quotaError && (
+				{quota.isError && (
 					<>
 						<p className="notice" role="alert">
-							{quotaError}
+							{quota.error.message}
 						</p>
-						<Button variant="outline" onClick={() => void refreshQuota()}>
+						<Button
+							variant="outline"
+							disabled={quota.isFetching}
+							onClick={() => void quota.refetch()}
+						>
 							Retry allowance
 						</Button>
 					</>
@@ -89,6 +100,8 @@ export function Booth({ backgrounds }: { backgrounds: Backdrop[] }) {
 					onCapture={startCountdown}
 					onRetake={retake}
 					onUpload={upload}
+					upload={uploadView}
+					canCapture={canCapture}
 					onPrepareSound={prepareSound}
 				/>
 				<BoothSettings

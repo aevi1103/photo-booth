@@ -1,28 +1,34 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef } from "react";
 import { useStore } from "zustand";
 import type { BoothStore } from "@/components/booth/store/store";
-import { MAX_PHOTO_BYTES, PHOTO_SIZE_ERROR } from "@/lib/photo-limits";
-import { isPhotoQuota } from "@/lib/photo-quota";
+import { canCaptureFromCache } from "@/lib/queries/account";
+import { useUploadPhoto } from "@/lib/queries/photos";
 import type { useBoothSounds } from "@/lib/use-booth-sounds";
 
 type CaptureSounds = Pick<ReturnType<typeof useBoothSounds>, "play">;
+export type UploadView = {
+	status: "idle" | "saving" | "saved" | "failed";
+	message: string;
+};
 
 export function useBoothCapture({
 	store,
 	canvasRef,
 	streamRef,
 	sounds,
-	refreshQuota,
 }: {
 	store: BoothStore;
 	canvasRef: RefObject<HTMLCanvasElement | null>;
 	streamRef: RefObject<MediaStream | null>;
 	sounds: CaptureSounds;
-	refreshQuota: () => Promise<void>;
 }) {
+	const queryClient = useQueryClient();
+	const uploadMutation = useUploadPhoto();
+	const resetUpload = uploadMutation.reset;
 	const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const captureBusyRef = useRef(false);
 	const { photo } = useStore(store);
@@ -41,40 +47,8 @@ export function useBoothCapture({
 		[photo],
 	);
 
-	async function upload(blob: Blob) {
-		store.setState({ uploadStatus: "saving", uploadState: "Saving photo…" });
-		try {
-			if (blob.size > MAX_PHOTO_BYTES) throw new Error(PHOTO_SIZE_ERROR);
-			const response = await fetch("/api/photos", {
-				method: "POST",
-				headers: { "Content-Type": "image/jpeg" },
-				body: blob,
-				signal: AbortSignal.timeout(20_000),
-			});
-			const result = (await response.json()) as {
-				error?: string;
-				saved?: boolean;
-				quota?: unknown;
-			};
-			if (isPhotoQuota(result.quota)) store.setState({ quota: result.quota });
-			if (!response.ok)
-				throw new Error(result.error ?? "Could not save photo.");
-			if (result.saved !== true)
-				throw new Error("The server did not confirm that the photo was saved.");
-			store.setState({
-				uploadStatus: "saved",
-				uploadState: "Saved privately for the host.",
-			});
-		} catch (error) {
-			store.setState({
-				uploadStatus: "failed",
-				uploadState:
-					error instanceof Error
-						? `Not saved online: ${error.message}`
-						: "Not saved online.",
-			});
-			void refreshQuota();
-		}
+	function upload(blob: Blob) {
+		uploadMutation.mutate(blob);
 	}
 
 	function capture() {
@@ -124,8 +98,7 @@ export function useBoothCapture({
 		if (
 			!state.connected ||
 			!state.frameReady ||
-			!state.quota ||
-			state.quota.remaining === 0 ||
+			!canCaptureFromCache(queryClient) ||
 			state.photo ||
 			captureBusyRef.current ||
 			streamRef.current?.getVideoTracks()[0]?.readyState !== "live"
@@ -157,8 +130,27 @@ export function useBoothCapture({
 
 	function retake() {
 		captureBusyRef.current = false;
-		store.setState({ photo: null, uploadState: "", uploadStatus: "idle" });
+		store.setState({ photo: null });
+		resetUpload();
 	}
 
-	return { upload, startCountdown, handleCameraInterruption, retake };
+	const uploadView: UploadView =
+		uploadMutation.status === "pending"
+			? { status: "saving", message: "Saving photo…" }
+			: uploadMutation.status === "success"
+				? { status: "saved", message: "Saved privately for the host." }
+				: uploadMutation.status === "error"
+					? {
+							status: "failed",
+							message: `Not saved online: ${uploadMutation.error.message}`,
+						}
+					: { status: "idle", message: "" };
+
+	return {
+		upload,
+		uploadView,
+		startCountdown,
+		handleCameraInterruption,
+		retake,
+	};
 }

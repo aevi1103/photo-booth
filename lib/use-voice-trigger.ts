@@ -27,6 +27,7 @@ export function useVoiceTrigger(onCapture: () => void) {
   const restartRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [status, setStatus] = useState<"off" | "starting" | "listening" | "reconnecting">("off");
   const [error, setError] = useState("");
+  const [transcript, setTranscript] = useState("");
 
   useEffect(() => { callbackRef.current = onCapture; }, [onCapture]);
   useEffect(() => () => {
@@ -48,6 +49,7 @@ export function useVoiceTrigger(onCapture: () => void) {
   function start() {
     if (recognitionRef.current) return;
     setError("");
+    setTranscript("");
     const browser = window as SpeechWindow;
     const Constructor = browser.SpeechRecognition ?? browser.webkitSpeechRecognition;
     if (!Constructor) {
@@ -57,21 +59,25 @@ export function useVoiceTrigger(onCapture: () => void) {
     const recognition = new Constructor();
     let networkRetries = 0;
     let retryingNetwork = false;
+    const triggeredResults = new Set<number>();
     recognitionRef.current = recognition;
     recognition.lang = "en-US";
     recognition.continuous = true;
-    recognition.interimResults = false;
+    recognition.interimResults = true;
     recognition.onstart = () => {
-      if (recognitionRef.current === recognition) setStatus("listening");
+      if (recognitionRef.current !== recognition) return;
+      triggeredResults.clear();
+      setStatus("listening");
     };
     recognition.onresult = (event) => {
       if (recognitionRef.current !== recognition) return;
       networkRetries = 0;
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
-        if (result.isFinal && /\bcapture\b/i.test(result[0].transcript)) {
+        setTranscript(result[0].transcript);
+        if (!triggeredResults.has(i) && /\bcapture\b/i.test(result[0].transcript)) {
+          triggeredResults.add(i);
           callbackRef.current();
-          break;
         }
       }
     };
@@ -122,5 +128,5 @@ export function useVoiceTrigger(onCapture: () => void) {
     }
   }
 
-  return { status, error, start, stop };
+  return { status, error, transcript, start, stop };
 }

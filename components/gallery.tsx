@@ -8,16 +8,7 @@ import { SignOut } from "@/components/sign-out";
 import { buttonVariants } from "@/components/ui/button";
 
 export function Gallery() {
-	const {
-		photos,
-		nextOffset,
-		loading,
-		error,
-		failedImages,
-		refresh,
-		loadMore,
-		markImageFailed,
-	} = useGallery();
+	const gallery = useGallery();
 
 	return (
 		<main className="booth-shell gallery-shell">
@@ -48,20 +39,7 @@ export function Gallery() {
 					event photos.
 				</p>
 			</section>
-			<GalleryPhotos
-				photos={photos}
-				nextOffset={nextOffset}
-				loading={loading}
-				failedImages={failedImages}
-				onRefresh={refresh}
-				onLoadMore={loadMore}
-				onImageError={markImageFailed}
-			/>
-			{error && (
-				<p className="notice" role="alert">
-					{error}
-				</p>
-			)}
+			<GalleryPhotos gallery={gallery} />
 		</main>
 	);
 }

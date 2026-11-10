@@ -36,7 +36,7 @@ export const test = base.extend<{ backend: Backend }, { supabase: Backend }>({
       create table storage.buckets(id text primary key, name text, public boolean, file_size_limit bigint, allowed_mime_types text[]);
       create table storage.objects(id uuid primary key default gen_random_uuid(), bucket_id text, name text, created_at timestamptz default now());
     `);
-    await db.exec(await readFile("supabase\\setup.sql", "utf8"));
+    await db.exec(await readFile("supabase/setup.sql", "utf8"));
     const backend: Backend = { db, objects: new Map(), storageError: null, listError: false, signError: false };
     const server = createServer(async (request, response) => {
       try {

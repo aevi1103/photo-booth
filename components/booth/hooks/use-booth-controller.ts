@@ -4,11 +4,11 @@ import { useRef, useState } from "react";
 import { useBoothCamera } from "@/components/booth/hooks/use-booth-camera";
 import { useBoothCapture } from "@/components/booth/hooks/use-booth-capture";
 import { useBoothPreview } from "@/components/booth/hooks/use-booth-preview";
-import { useBoothQuota } from "@/components/booth/hooks/use-booth-quota";
 import {
 	type Backdrop,
 	createBoothStore,
 } from "@/components/booth/store/store";
+import { quotaAllowsCapture, useQuota } from "@/lib/queries/account";
 import { useBoothSounds } from "@/lib/use-booth-sounds";
 import { useVoiceTrigger } from "@/lib/use-voice-trigger";
 
@@ -16,7 +16,7 @@ export function useBoothController(backgrounds: Backdrop[]) {
 	const [store] = useState(() => createBoothStore(backgrounds));
 	const sounds = useBoothSounds();
 	const streamRef = useRef<MediaStream | null>(null);
-	const { quota, quotaError, refreshQuota } = useBoothQuota(store);
+	const quota = useQuota();
 	const { videoRef, canvasRef, compositorRef, settingsRef } =
 		useBoothPreview(store);
 	const capture = useBoothCapture({
@@ -24,7 +24,6 @@ export function useBoothController(backgrounds: Backdrop[]) {
 		canvasRef,
 		streamRef,
 		sounds,
-		refreshQuota,
 	});
 	const { connect } = useBoothCamera({
 		store,
@@ -44,11 +43,11 @@ export function useBoothController(backgrounds: Backdrop[]) {
 		videoRef,
 		canvasRef,
 		quota,
-		quotaError,
-		refreshQuota,
+		canCapture: quotaAllowsCapture(quota.status, quota.data),
 		startCountdown: capture.startCountdown,
 		connect,
 		upload: capture.upload,
+		uploadView: capture.uploadView,
 		retake: capture.retake,
 		prepareSound: sounds.prepare,
 	};

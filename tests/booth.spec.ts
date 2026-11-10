@@ -164,6 +164,65 @@ test("mobile puts booth first and toggles settings without stopping the camera o
   await expect(toggle).toBeHidden();
 });
 
+test("desktop keeps the camera preview dominant with compact surrounding layout", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/");
+  const header = await page.locator(".topbar").boundingBox();
+  const hero = await page.locator(".hero").boundingBox();
+  const preview = await page.locator(".preview").boundingBox();
+  const settings = await page.locator("aside.controls-card").boundingBox();
+  expect(header?.height).toBe(64);
+  expect(hero?.height).toBeLessThan(110);
+  expect(preview?.width).toBeGreaterThanOrEqual(900);
+  expect(settings?.width).toBeLessThanOrEqual(280);
+  expect(settings?.y).toBeLessThan(preview!.y + preview!.height);
+});
+
+for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+  test(`photo mode fills the screen and exits with Escape or browser back at ${viewport.width}px`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    if (viewport.width <= 800) {
+      await page.getByRole("button", { name: "Show settings", exact: true }).click();
+    }
+    await page.getByRole("button", { name: "Connect", exact: true }).click();
+    await expect(page.getByText("LIVE", { exact: true })).toBeVisible();
+    if (viewport.width <= 800) {
+      await page.getByRole("button", { name: "Hide settings", exact: true }).click();
+    }
+
+    await page.getByRole("button", { name: "Photo mode" }).click();
+    await expect(page.locator(".preview-card")).toHaveCSS("position", "absolute");
+    await expect(page.locator(".topbar")).toBeHidden();
+    await expect(page.locator(".hero")).toBeHidden();
+    await expect(page.locator(".controls-card")).toBeHidden();
+    await expect(page.getByRole("button", { name: "Take a photo" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Enable voice capture" })).toBeVisible();
+    const preview = await page.locator(".preview").boundingBox();
+    expect(preview?.x).toBe(0);
+    expect(preview?.y).toBe(0);
+    expect(preview?.width).toBe(viewport.width);
+    expect(preview?.height).toBe(viewport.height);
+    await expect(page.locator("body")).toHaveCSS("overflow", "hidden");
+
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("button", { name: "Photo mode" })).toBeVisible();
+    await expect(page.locator(".topbar")).toBeVisible();
+    await expect(page.locator("body")).not.toHaveCSS("overflow", "hidden");
+
+    await page.getByRole("button", { name: "Photo mode" }).click();
+    await page.evaluate(() => window.history.back());
+    await expect(page.locator(".booth-preview")).not.toHaveClass(/is-photo-mode/);
+    await page.getByRole("button", { name: "Photo mode" }).click();
+    await page.getByRole("button", { name: "Take a photo" }).click();
+    await expect(page.getByRole("button", { name: "Retake" })).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(page.getByRole("button", { name: "Photo mode" })).toBeVisible();
+    await expect(page.locator("body")).not.toHaveCSS("overflow", "hidden");
+  });
+}
+
 for (const name of ["NotAllowedError", "NotFoundError", "NotReadableError"]) {
   test(`camera ${name} shows recovery instructions and allows retry`, async ({ page }) => {
     await page.addInitScript((name) => {
@@ -327,6 +386,25 @@ test("saving prevents retake and only confirmed saves hide the fallback", async 
   await expect(page.getByRole("button", { name: "Retake" })).toBeEnabled();
 });
 
+test("saving optimistically reserves one upload and rolls back when the save fails", async ({ page }) => {
+  let release: (() => void) | undefined;
+  const pending = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/api/photos", async (route) => {
+    await pending;
+    await route.fulfill({ status: 503, json: { error: "Could not save photo. Please retry." } });
+  });
+  await page.goto("/");
+  await expect(page.getByText("20 of 20 photo uploads remaining")).toBeVisible();
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Take a photo" })).toBeEnabled();
+  await page.getByRole("button", { name: "Take a photo" }).click();
+  await expect(page.getByText("Saving photo…")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText("19 of 20 photo uploads remaining")).toBeVisible();
+  release?.();
+  await expect(page.getByRole("alert").filter({ hasText: "Could not save photo" })).toBeVisible();
+  await expect(page.getByText("20 of 20 photo uploads remaining")).toBeVisible();
+});
+
 test("local background replaces green only when enabled", async ({ page }) => {
   await page.route("**/images/photoboot-bg.jpeg", (route) => route.fulfill({
     contentType: "image/svg+xml",
@@ -360,54 +438,69 @@ test("local background replaces green only when enabled", async ({ page }) => {
   })).toBe(true);
 });
 
-test("voice capture starts one countdown and can capture again after retake", async ({ page }) => {
-  await page.addInitScript(() => {
-    class FakeRecognition {
-      continuous = false;
-      interimResults = false;
-      lang = "";
-      onstart: (() => void) | null = null;
-      onresult: ((event: object) => void) | null = null;
-      onerror: ((event: object) => void) | null = null;
-      onend: (() => void) | null = null;
-      start() { this.onstart?.(); }
-      abort() { this.onend?.(); }
-      constructor() { Object.assign(window, { fakeRecognition: this }); }
+for (const interim of [false, true]) {
+  test(`voice capture starts one countdown and can capture again after retake (${interim ? "interim" : "final"} results)`, async ({ page }) => {
+    await page.addInitScript(() => {
+      class FakeRecognition {
+        continuous = false;
+        interimResults = false;
+        lang = "";
+        onstart: (() => void) | null = null;
+        onresult: ((event: object) => void) | null = null;
+        onerror: ((event: object) => void) | null = null;
+        onend: (() => void) | null = null;
+        start() { this.onstart?.(); }
+        abort() { this.onend?.(); }
+        constructor() { Object.assign(window, { fakeRecognition: this }); }
+      }
+      Object.assign(window, { SpeechRecognition: FakeRecognition, webkitSpeechRecognition: FakeRecognition });
+    });
+    await page.route("**/api/photos", (route) => route.fulfill({ json: { saved: true } }));
+    await page.goto("/");
+    await page.getByRole("button", { name: "Connect", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Take a photo" })).toBeEnabled();
+    await page.getByRole("button", { name: "Enable voice capture" }).click();
+    await expect(page.getByRole("status").filter({ hasText: "Listening for" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Stop voice capture" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("button", { name: "Stop voice capture" })).toHaveCSS("border-top-style", "solid");
+    await expect(page.getByRole("button", { name: "Stop voice capture" })).toHaveCSS("color", "rgb(56, 121, 92)");
+    let resultIndex = 0;
+    const speak = async (text: string, isFinal = true) => {
+      await page.evaluate(({ transcript, isFinal, resultIndex }) => {
+        const recognition = (window as Window & { fakeRecognition?: { onresult: (event: object) => void } }).fakeRecognition;
+        if (!recognition) throw new Error("Fake recognition not initialized");
+        recognition.onresult({
+          resultIndex,
+          results: Array.from({ length: resultIndex + 1 }, () => ({ isFinal, 0: { transcript } })),
+        });
+      }, { transcript: text, isFinal, resultIndex });
+      if (isFinal) resultIndex++;
+    };
+    expect(await page.evaluate(() => (window as Window & { fakeRecognition?: { interimResults: boolean } }).fakeRecognition?.interimResults)).toBe(true);
+    await speak("recaptured");
+    await expect(page.getByRole("status").filter({ hasText: "Heard: “recaptured”" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Take a photo" })).toBeEnabled();
+    await speak("Capture!", !interim);
+    await speak("capture", !interim);
+    await expect(page.getByRole("button", { name: "Get ready" })).toBeDisabled();
+    await expect(page.getByAltText("A moment at the baby shower")).toBeVisible({ timeout: 10_000 });
+    await speak("capture", !interim);
+    await expect(page.getByAltText("A moment at the baby shower")).toBeVisible();
+    await page.getByRole("button", { name: "Retake" }).click();
+    await expect(page.getByRole("button", { name: "Take a photo" })).toBeEnabled();
+    if (interim) {
+      await speak("capture");
+      await expect(page.getByRole("button", { name: "Take a photo" })).toBeEnabled();
     }
-    Object.assign(window, { SpeechRecognition: FakeRecognition, webkitSpeechRecognition: FakeRecognition });
+    await speak("capture");
+    await expect(page.getByAltText("A moment at the baby shower")).toBeVisible({ timeout: 10_000 });
+    await page.getByRole("button", { name: "Stop voice capture" }).click();
+    await expect(page.getByText("Voice control is off.")).toBeVisible();
+    const audio = await page.evaluate(() => (window as Window & { boothAudioEvents?: { kind: string }[] }).boothAudioEvents);
+    expect(audio?.filter((event) => event.kind === "countdown")).toHaveLength(6);
+    expect(audio?.filter((event) => event.kind === "shutter")).toHaveLength(2);
   });
-  await page.route("**/api/photos", (route) => route.fulfill({ json: { saved: true } }));
-  await page.goto("/");
-  await page.getByRole("button", { name: "Connect", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Take a photo" })).toBeEnabled();
-  await page.getByRole("button", { name: "Enable voice capture" }).click();
-  await expect(page.getByRole("status").filter({ hasText: "Listening for" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Stop voice capture" })).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByRole("button", { name: "Stop voice capture" })).toHaveCSS("border-top-style", "solid");
-  await expect(page.getByRole("button", { name: "Stop voice capture" })).toHaveCSS("color", "rgb(56, 121, 92)");
-  const speak = (text: string) => page.evaluate((transcript) => {
-    const recognition = (window as Window & { fakeRecognition?: { onresult: (event: object) => void } }).fakeRecognition;
-    if (!recognition) throw new Error("Fake recognition not initialized");
-    recognition.onresult({ resultIndex: 0, results: [{ isFinal: true, 0: { transcript } }] });
-  }, text);
-  await speak("recaptured");
-  await expect(page.getByRole("button", { name: "Take a photo" })).toBeEnabled();
-  await speak("Capture!");
-  await speak("capture");
-  await expect(page.getByRole("button", { name: "Get ready" })).toBeDisabled();
-  await expect(page.getByAltText("A moment at the baby shower")).toBeVisible({ timeout: 10_000 });
-  await speak("capture");
-  await expect(page.getByAltText("A moment at the baby shower")).toBeVisible();
-  await page.getByRole("button", { name: "Retake" }).click();
-  await expect(page.getByRole("button", { name: "Take a photo" })).toBeEnabled();
-  await speak("capture");
-  await expect(page.getByAltText("A moment at the baby shower")).toBeVisible({ timeout: 10_000 });
-  await page.getByRole("button", { name: "Stop voice capture" }).click();
-  await expect(page.getByText("Voice control is off.")).toBeVisible();
-  const audio = await page.evaluate(() => (window as Window & { boothAudioEvents?: { kind: string }[] }).boothAudioEvents);
-  expect(audio?.filter((event) => event.kind === "countdown")).toHaveLength(6);
-  expect(audio?.filter((event) => event.kind === "shutter")).toHaveLength(2);
-});
+}
 
 test("audio failure is explicit but does not prevent capture and saving", async ({ page }) => {
   await page.addInitScript(() => {
@@ -572,6 +665,22 @@ test("authenticated gallery browses pages and refreshes with the booth theme", a
     mode = "expired";
     await page.getByRole("button", { name: "Refresh photos" }).click();
     await expect(page.getByRole("alert").filter({ hasText: "link expired" })).toBeVisible();
+  });
+
+  test("gallery keeps loaded photos visible when a background refresh fails", async ({ page }) => {
+    let failing = false;
+    await page.route("**/api/photos?offset=*", async (route) => {
+      if (failing) return route.fulfill({ status: 503, json: { error: "Could not load photos. Please retry." } });
+      await route.fulfill({ json: { photos: [{ name: "kept.jpg", createdAt: "2026-11-09T12:00:00Z", url: "/kept.jpg" }], nextOffset: null } });
+    });
+    await page.goto("/gallery");
+    await expect(page.getByText("1 photo loaded")).toBeVisible();
+    await expect(page.getByText(/^Updated /)).toBeVisible();
+    failing = true;
+    await page.getByRole("button", { name: "Refresh photos" }).click();
+    await expect(page.getByRole("alert").filter({ hasText: "Showing previously loaded photos" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Open photo kept.jpg" })).toBeVisible();
+    await expect(page.getByText("No photos yet.", { exact: false })).toHaveCount(0);
   });
 
   test("gallery endpoint paginates private storage and reports storage failures", async ({ request, backend }) => {

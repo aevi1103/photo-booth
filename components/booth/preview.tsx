@@ -1,8 +1,18 @@
 "use client";
 
-import { Camera, Cloud, Download, Mic, MicOff, RefreshCw } from "lucide-react";
+import {
+	Camera,
+	Cloud,
+	Download,
+	Maximize2,
+	Mic,
+	MicOff,
+	RefreshCw,
+} from "lucide-react";
 import Image from "next/image";
+import { useEffect, useState } from "react";
 import { useStore } from "zustand";
+import type { UploadView } from "@/components/booth/hooks/use-booth-capture";
 import type { BoothStore } from "@/components/booth/store/store";
 import { Button, buttonVariants } from "@/components/ui/button";
 import type { useBoothSounds } from "@/lib/use-booth-sounds";
@@ -17,6 +27,8 @@ type Props = {
 	onCapture: () => void;
 	onRetake: () => void;
 	onUpload: (blob: Blob) => void;
+	upload: UploadView;
+	canCapture: boolean;
 	onPrepareSound: () => void;
 };
 
@@ -29,22 +41,49 @@ export function BoothPreview({
 	onCapture,
 	onRetake,
 	onUpload,
+	upload,
+	canCapture,
 	onPrepareSound,
 }: Props) {
-	const {
-		connected,
-		resolution,
-		photo,
-		countdown,
-		message,
-		uploadStatus,
-		uploadState,
-		frameReady,
-		quota,
-	} = useStore(store);
+	const { connected, resolution, photo, countdown, message, frameReady } =
+		useStore(store);
+	const [photoMode, setPhotoMode] = useState(false);
+	const isPhotoMode = photoMode && !photo;
+
+	useEffect(() => {
+		if (!isPhotoMode) return;
+
+		const previousOverflow = document.body.style.overflow;
+		document.body.style.overflow = "hidden";
+		const exitOnEscape = (event: KeyboardEvent) => {
+			if (event.key === "Escape") {
+				window.history.back();
+				setPhotoMode(false);
+			}
+		};
+		const exitOnBack = () => setPhotoMode(false);
+		window.addEventListener("keydown", exitOnEscape);
+		window.addEventListener("popstate", exitOnBack);
+
+		return () => {
+			document.body.style.overflow = previousOverflow;
+			window.removeEventListener("keydown", exitOnEscape);
+			window.removeEventListener("popstate", exitOnBack);
+		};
+	}, [isPhotoMode]);
+	const enterPhotoMode = () => {
+		const state =
+			window.history.state && typeof window.history.state === "object"
+				? { ...window.history.state, photoBoothMode: true }
+				: { photoBoothMode: true };
+		window.history.pushState(state, "", window.location.href);
+		setPhotoMode(true);
+	};
 
 	return (
-		<section className="preview-card booth-preview">
+		<section
+			className={`preview-card booth-preview${isPhotoMode ? " is-photo-mode" : ""}`}
+		>
 			<div className="preview-heading">
 				<div>
 					<h2>Your photo booth</h2>
@@ -54,9 +93,19 @@ export function BoothPreview({
 							: "Connect a camera to get started"}
 					</p>
 				</div>
-				<span className={connected ? "status on" : "status"}>
-					{connected ? "LIVE" : "OFFLINE"}
-				</span>
+				<div className="preview-tools">
+					<Button
+						className="photo-mode-button"
+						variant="outline"
+						disabled={!connected || photo !== null}
+						onClick={enterPhotoMode}
+					>
+						<Maximize2 /> Photo mode
+					</Button>
+					<span className={connected ? "status on" : "status"}>
+						{connected ? "LIVE" : "OFFLINE"}
+					</span>
+				</div>
 			</div>
 			<div className="preview" style={{ aspectRatio: "1153 / 768" }}>
 				<video
@@ -103,11 +152,7 @@ export function BoothPreview({
 						className="capture-button"
 						size="lg"
 						disabled={
-							!connected ||
-							!frameReady ||
-							!quota ||
-							quota.remaining === 0 ||
-							countdown !== null
+							!connected || !frameReady || !canCapture || countdown !== null
 						}
 						onClick={onCapture}
 					>
@@ -117,12 +162,15 @@ export function BoothPreview({
 					<>
 						<Button
 							size="lg"
-							disabled={uploadStatus === "saving"}
-							onClick={onRetake}
+							disabled={upload.status === "saving"}
+							onClick={() => {
+								setPhotoMode(false);
+								onRetake();
+							}}
 						>
 							<RefreshCw /> Retake
 						</Button>
-						{uploadStatus === "failed" && (
+						{upload.status === "failed" && (
 							<a
 								className={buttonVariants({ variant: "outline", size: "lg" })}
 								href={photo.url}
@@ -154,7 +202,7 @@ export function BoothPreview({
 						: "Stop voice capture"}
 				</Button>
 			</div>
-			<p className="sr-only" role="status">
+			<p className={voice.status === "off" ? "sr-only" : "small"} role="status">
 				{voice.status === "listening"
 					? "Listening for “capture”"
 					: voice.status === "starting"
@@ -162,6 +210,9 @@ export function BoothPreview({
 						: voice.status === "reconnecting"
 							? "Speech service connection failed. Retrying…"
 							: "Voice control is off."}
+				{voice.status !== "off" && voice.transcript && (
+					<> · Heard: “{voice.transcript}”</>
+				)}
 			</p>
 			<p className="sr-only" id="voice-disclosure">
 				Say capture to start the countdown. Microphone audio may be sent to your
@@ -174,10 +225,10 @@ export function BoothPreview({
 			)}
 			{photo && (
 				<div className="upload-result">
-					<p role={uploadStatus === "failed" ? "alert" : "status"}>
-						{uploadState}
+					<p role={upload.status === "failed" ? "alert" : "status"}>
+						{upload.message}
 					</p>
-					{uploadStatus === "failed" && (
+					{upload.status === "failed" && (
 						<>
 							<p className="small">
 								Download this photo as a backup, or retry saving before taking
