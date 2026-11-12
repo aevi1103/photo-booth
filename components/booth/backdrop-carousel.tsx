@@ -39,10 +39,10 @@ export function BackdropCarousel({
 							aria-pressed={background === item.url}
 							disabled={countdown !== null || photo !== null}
 							onClick={() =>
-								store.setState((state) => ({
+								store.setState({
 									background: item.url,
-									settings: { ...state.settings, greenScreen: true },
-								}))
+									backgroundChosen: true,
+								})
 							}
 						>
 							<Image

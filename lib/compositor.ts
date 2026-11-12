@@ -23,19 +23,16 @@ uniform float threshold;
 uniform float softness;
 uniform float mirror;
 uniform float greenScreen;
-uniform vec2 backgroundScale;
 uniform vec2 cameraScale;
-uniform vec4 opening;
 vec2 chroma(vec3 c) {
   c = c / max(c.r + c.g + c.b, 0.001);
   return vec2(c.b - c.g, c.r - c.g);
 }
 void main() {
-  vec2 windowUv = (uv - opening.xy) / opening.zw;
-  vec2 cameraUv = (windowUv - 0.5) * cameraScale + 0.5;
+  vec2 cameraUv = (uv - 0.5) * cameraScale + 0.5;
   cameraUv.x = mix(cameraUv.x, 1.0 - cameraUv.x, mirror);
   vec3 foreground = texture2D(camera, cameraUv).rgb;
-  vec3 backdrop = texture2D(background, (windowUv - 0.5) * backgroundScale + 0.5).rgb;
+  vec3 backdrop = texture2D(background, uv).rgb;
   float distanceToKey = distance(chroma(foreground), chroma(keyColor));
   float alpha = mix(1.0, smoothstep(threshold, threshold + softness, distanceToKey), greenScreen);
   vec3 video = mix(backdrop, foreground, alpha);
@@ -131,19 +128,9 @@ export function createCompositor(canvas: HTMLCanvasElement) {
 	context.uniform1i(context.getUniformLocation(program, "background"), 1);
 	context.uniform1i(context.getUniformLocation(program, "frameImage"), 2);
 	context.pixelStorei(context.UNPACK_FLIP_Y_WEBGL, true);
-	let backgroundWidth = 1;
-	let backgroundHeight = 1;
+	// Output keeps the booth's canvas shape; frame overlays are stretched onto it.
 	const frameWidth = 1153;
 	const frameHeight = 768;
-	const openingWidth = 715;
-	const openingHeight = 553;
-	context.uniform4f(
-		context.getUniformLocation(program, "opening"),
-		93 / frameWidth,
-		100 / frameHeight,
-		openingWidth / frameWidth,
-		openingHeight / frameHeight,
-	);
 	context.activeTexture(context.TEXTURE1);
 	context.bindTexture(context.TEXTURE_2D, backgroundTexture);
 	context.texImage2D(
@@ -173,27 +160,10 @@ export function createCompositor(canvas: HTMLCanvasElement) {
 
 	return {
 		setFrame(image: HTMLImageElement) {
-			if (
-				image.naturalWidth !== frameWidth ||
-				image.naturalHeight !== frameHeight
-			)
+			if (!image.naturalWidth || !image.naturalHeight)
 				throw new Error("The photo frame has unexpected dimensions.");
 			context.activeTexture(context.TEXTURE2);
 			context.bindTexture(context.TEXTURE_2D, frameTexture);
-			context.texImage2D(
-				context.TEXTURE_2D,
-				0,
-				context.RGBA,
-				context.RGBA,
-				context.UNSIGNED_BYTE,
-				image,
-			);
-		},
-		setBackground(image: HTMLImageElement) {
-			backgroundWidth = image.naturalWidth;
-			backgroundHeight = image.naturalHeight;
-			context.activeTexture(context.TEXTURE1);
-			context.bindTexture(context.TEXTURE_2D, backgroundTexture);
 			context.texImage2D(
 				context.TEXTURE_2D,
 				0,
@@ -249,13 +219,7 @@ export function createCompositor(canvas: HTMLCanvasElement) {
 				context.getUniformLocation(program, "greenScreen"),
 				settings.greenScreen ? 1 : 0,
 			);
-			const outputAspect = openingWidth / openingHeight;
-			const backgroundAspect = backgroundWidth / backgroundHeight;
-			context.uniform2f(
-				context.getUniformLocation(program, "backgroundScale"),
-				Math.min(1, outputAspect / backgroundAspect),
-				Math.min(1, backgroundAspect / outputAspect),
-			);
+			const outputAspect = frameWidth / frameHeight;
 			const cameraAspect = video.videoWidth / video.videoHeight;
 			context.uniform2f(
 				context.getUniformLocation(program, "cameraScale"),

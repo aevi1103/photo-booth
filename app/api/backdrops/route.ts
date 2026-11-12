@@ -12,11 +12,65 @@ const headers = { "Cache-Control": "private, no-store" };
 const filenamePattern =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}_[a-z0-9-]{1,80}\.(jpg|png|webp)$/;
 
+type BackdropBucket = ReturnType<
+	ReturnType<typeof createAdminClient>["storage"]["from"]
+>;
+
+function displayName(file: string) {
+	return file
+		.slice(37)
+		.replace(/\.[^.]+$/, "")
+		.replace(/-/g, " ");
+}
+
+async function listBackdropFiles(bucket: BackdropBucket) {
+	const files: string[] = [];
+	for (let offset = 0; ; offset += 100) {
+		const { data, error } = await bucket.list("", {
+			limit: 100,
+			offset,
+			sortBy: { column: "name", order: "asc" },
+		});
+		if (error || !data) {
+			console.error("Backdrop listing failed:", error?.message);
+			return { error: true as const };
+		}
+		for (const item of data) {
+			if (item.id && filenamePattern.test(item.name)) files.push(item.name);
+		}
+		if (data.length < 100) break;
+	}
+	return { files };
+}
+
+type BackdropSetting = { hidden: boolean; isDefault: boolean };
+
+async function getBackdropSettings(
+	client: ReturnType<typeof createAdminClient>,
+) {
+	const { data, error } = await client.rpc("get_backdrop_settings");
+	if (error || !Array.isArray(data)) {
+		console.error("Backdrop settings lookup failed:", error?.message);
+		return { error: true as const };
+	}
+	const settings = new Map<string, BackdropSetting>();
+	for (const row of data) {
+		if (typeof row?.file_name === "string")
+			settings.set(row.file_name, {
+				hidden: row.hidden === true,
+				isDefault: row.is_default === true,
+			});
+	}
+	return { settings };
+}
+
 export async function GET(request: Request) {
 	const auth = await requireUser();
 	if (auth.response) return auth.response;
-	const bucket = createAdminClient().storage.from("backdrops");
-	const file = new URL(request.url).searchParams.get("file");
+	const client = createAdminClient();
+	const bucket = client.storage.from("backdrops");
+	const url = new URL(request.url);
+	const file = url.searchParams.get("file");
 	if (file !== null) {
 		if (!filenamePattern.test(file))
 			return Response.json(
@@ -44,33 +98,97 @@ export async function GET(request: Request) {
 			},
 		});
 	}
+	const manage = url.searchParams.get("manage") !== null;
+	if (manage) {
+		const admin = await requireAdmin();
+		if (admin.response) return admin.response;
+	}
+	const [listing, lookup] = await Promise.all([
+		listBackdropFiles(bucket),
+		getBackdropSettings(client),
+	]);
+	if (listing.error || lookup.error)
+		return Response.json(
+			{ error: "Could not load backdrops. Please retry." },
+			{ status: 503, headers },
+		);
+	if (manage)
+		return Response.json(
+			{
+				backdrops: listing.files.map((name) => ({
+					file: name,
+					name: displayName(name),
+					url: `/api/backdrops?file=${encodeURIComponent(name)}`,
+					hidden: lookup.settings.get(name)?.hidden ?? false,
+					isDefault: lookup.settings.get(name)?.isDefault ?? false,
+				})),
+			},
+			{ headers },
+		);
 	const backdrops = [];
-	for (let offset = 0; ; offset += 100) {
-		const { data, error } = await bucket.list("", {
-			limit: 100,
-			offset,
-			sortBy: { column: "name", order: "asc" },
+	for (const name of listing.files) {
+		const setting = lookup.settings.get(name);
+		if (setting?.hidden) continue;
+		backdrops.push({
+			name: displayName(name),
+			url: `/api/backdrops?file=${encodeURIComponent(name)}`,
+			...(setting?.isDefault ? { isDefault: true } : {}),
 		});
-		if (error || !data) {
-			console.error("Backdrop listing failed:", error?.message);
-			return Response.json(
-				{ error: "Could not load backdrops. Please retry." },
-				{ status: 503, headers },
-			);
-		}
-		for (const item of data) {
-			if (item.id && filenamePattern.test(item.name))
-				backdrops.push({
-					name: item.name
-						.slice(37)
-						.replace(/\.[^.]+$/, "")
-						.replace(/-/g, " "),
-					url: `/api/backdrops?file=${encodeURIComponent(item.name)}`,
-				});
-		}
-		if (data.length < 100) break;
 	}
 	return Response.json({ backdrops }, { headers });
+}
+
+export async function PATCH(request: Request) {
+	const auth = await requireAdmin();
+	if (auth.response) return auth.response;
+	const origin = request.headers.get("origin");
+	if (origin && origin !== appOrigin(request))
+		return Response.json(
+			{ error: "Invalid update origin." },
+			{ status: 403, headers },
+		);
+	const body: unknown = await request.json().catch(() => null);
+	const update =
+		body && typeof body === "object"
+			? (body as { file?: unknown; hidden?: unknown; isDefault?: unknown })
+			: {};
+	const { file, hidden, isDefault } = update;
+	if (
+		typeof file !== "string" ||
+		!filenamePattern.test(file) ||
+		(hidden !== undefined && typeof hidden !== "boolean") ||
+		(isDefault !== undefined && typeof isDefault !== "boolean") ||
+		(hidden === undefined && isDefault === undefined)
+	)
+		return Response.json(
+			{ error: "Invalid backdrop update." },
+			{ status: 400, headers },
+		);
+	const client = createAdminClient();
+	const listing = await listBackdropFiles(client.storage.from("backdrops"));
+	if (listing.error)
+		return Response.json(
+			{ error: "Could not update the backdrop. Please retry." },
+			{ status: 503, headers },
+		);
+	if (!listing.files.includes(file))
+		return Response.json(
+			{ error: "That backdrop no longer exists." },
+			{ status: 404, headers },
+		);
+	const { error } = await client.rpc("set_backdrop_setting", {
+		p_file_name: file,
+		p_hidden: hidden ?? null,
+		p_is_default: isDefault ?? null,
+	});
+	if (error) {
+		console.error("Backdrop update failed:", error.message);
+		return Response.json(
+			{ error: "Could not update the backdrop. Please retry." },
+			{ status: 503, headers },
+		);
+	}
+	return Response.json({ saved: true }, { headers });
 }
 
 export async function POST(request: Request) {

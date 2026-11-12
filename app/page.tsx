@@ -4,13 +4,14 @@ import path from "node:path";
 
 async function getBackgrounds() {
   "use cache";
-  const entries = await readdir(path.join(process.cwd(), "public", "images"), { withFileTypes: true });
+  // Bundled frame overlays; the camera shows through their transparent areas.
+  const entries = await readdir(path.join(process.cwd(), "public", "frames"), { withFileTypes: true });
   return entries
-    .filter((entry) => entry.isFile() && /\.(jpe?g|png|webp)$/i.test(entry.name))
+    .filter((entry) => entry.isFile() && /\.(png|webp)$/i.test(entry.name))
     .sort((a, b) => a.name.localeCompare(b.name))
     .map((entry) => ({
       name: entry.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " "),
-      url: `/images/${encodeURIComponent(entry.name)}`,
+      url: `/frames/${encodeURIComponent(entry.name)}`,
     }));
 }
 

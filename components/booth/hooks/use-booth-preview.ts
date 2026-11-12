@@ -9,7 +9,7 @@ import { createCompositor } from "@/lib/compositor";
 type Compositor = ReturnType<typeof createCompositor>;
 
 export function useBoothPreview(store: BoothStore) {
-	const { settings, background } = useStore(store);
+	const { settings, background, connected } = useStore(store);
 	const videoRef = useRef<HTMLVideoElement>(null);
 	const canvasRef = useRef<HTMLCanvasElement>(null);
 	const compositorRef = useRef<Compositor | null>(null);
@@ -38,26 +38,6 @@ export function useBoothPreview(store: BoothStore) {
 			return;
 		}
 		compositorRef.current = compositor;
-		const frameImage = new Image();
-		frameImage.onload = () => {
-			try {
-				compositor.setFrame(frameImage);
-				store.setState({ frameReady: true });
-			} catch (error) {
-				store.setState({
-					message:
-						error instanceof Error
-							? error.message
-							: "Could not load the photo frame.",
-				});
-			}
-		};
-		frameImage.onerror = () =>
-			store.setState({
-				message:
-					"Could not load the photo frame. Refresh the page and try again.",
-			});
-		frameImage.src = "/frames/baby-shower.png";
 		let animation = 0;
 		const render = () => {
 			try {
@@ -75,38 +55,99 @@ export function useBoothPreview(store: BoothStore) {
 		animation = requestAnimationFrame(render);
 		return () => {
 			cancelAnimationFrame(animation);
-			frameImage.onload = null;
-			frameImage.onerror = null;
 			compositor.destroy();
 			compositorRef.current = null;
 		};
 	}, [store]);
 
+	// The selected carousel image is the frame overlay; the camera shows
+	// through its transparent areas.
 	useEffect(() => {
 		if (!background) return;
+		store.setState({ frameReady: false });
 		let cancelled = false;
 		const image = new Image();
 		image.crossOrigin = "anonymous";
 		image.onload = () => {
-			if (cancelled) return;
+			if (cancelled || !compositorRef.current) return;
 			try {
-				compositorRef.current?.setBackground(image);
+				compositorRef.current.setFrame(image);
+				store.setState({ frameReady: true });
 			} catch {
 				store.setState({
-					message:
-						"Could not use that background. Check its storage access and try another image.",
+					message: "Could not use that frame. Try another design.",
 				});
 			}
 		};
 		image.onerror = () => {
 			if (!cancelled)
-				store.setState({ message: "Could not load that background image." });
+				store.setState({
+					message:
+						"Could not load that frame image. Pick another one or refresh the page.",
+				});
 		};
 		image.src = background;
 		return () => {
 			cancelled = true;
 		};
 	}, [background, store]);
+
+	// Warn when green-screen replacement is on but the camera sees no key color,
+	// which otherwise makes selected backdrops silently invisible.
+	useEffect(() => {
+		const video = videoRef.current;
+		if (!connected || !video) return;
+		const sampler = document.createElement("canvas");
+		sampler.width = 48;
+		sampler.height = 27;
+		const context = sampler.getContext("2d", { willReadFrequently: true });
+		if (!context) return;
+		const update = (value: boolean | null) => {
+			if (store.getState().keyDetected !== value)
+				store.setState({ keyDetected: value });
+		};
+		// Same chroma mapping as the compositor shader.
+		const chroma = (red: number, green: number, blue: number) => {
+			const sum = Math.max(red + green + blue, 0.001);
+			return [blue / sum - green / sum, red / sum - green / sum];
+		};
+		const sample = () => {
+			const { color, threshold, greenScreen } = settingsRef.current;
+			if (!greenScreen) return update(null);
+			const key = color.match(/[a-f\d]{2}/gi);
+			if (key?.length !== 3 || video.readyState < 2) return;
+			const [keyBlue, keyRed] = chroma(
+				...(key.map((part) => parseInt(part, 16) / 255) as [
+					number,
+					number,
+					number,
+				]),
+			);
+			context.drawImage(video, 0, 0, sampler.width, sampler.height);
+			const pixels = context.getImageData(
+				0,
+				0,
+				sampler.width,
+				sampler.height,
+			).data;
+			let keyed = 0;
+			for (let index = 0; index < pixels.length; index += 4) {
+				const [blue, red] = chroma(
+					pixels[index] / 255,
+					pixels[index + 1] / 255,
+					pixels[index + 2] / 255,
+				);
+				if (Math.hypot(blue - keyBlue, red - keyRed) <= threshold) keyed++;
+			}
+			update(keyed / (pixels.length / 4) >= 0.02);
+		};
+		sample();
+		const timer = setInterval(sample, 1500);
+		return () => {
+			clearInterval(timer);
+			update(null);
+		};
+	}, [connected, store]);
 
 	return { videoRef, canvasRef, compositorRef, settingsRef };
 }

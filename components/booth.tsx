@@ -2,7 +2,7 @@
 
 import { Cloud, Sparkles } from "lucide-react";
 import Link from "next/link";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useBoothController } from "@/components/booth/hooks/use-booth-controller";
 import { BoothPreview } from "@/components/booth/preview";
 import { BoothSettings } from "@/components/booth/settings";
@@ -13,7 +13,15 @@ import { useBackdrops } from "@/lib/queries/backdrops";
 
 export function Booth({ backgrounds: defaults }: { backgrounds: Backdrop[] }) {
 	const backdrops = useBackdrops();
-	const backgrounds = backdrops.data?.length ? backdrops.data : defaults;
+	const uploaded = backdrops.data;
+	const backgrounds = useMemo(() => {
+		const seen = new Set<string>();
+		return [...defaults, ...(uploaded ?? [])].filter((item) => {
+			if (seen.has(item.url)) return false;
+			seen.add(item.url);
+			return true;
+		});
+	}, [uploaded, defaults]);
 	const {
 		store,
 		sounds,
@@ -31,8 +39,15 @@ export function Booth({ backgrounds: defaults }: { backgrounds: Backdrop[] }) {
 	} = useBoothController(backgrounds);
 
 	useEffect(() => {
-		if (!backgrounds.some((item) => item.url === store.getState().background))
-			store.setState({ background: backgrounds[0]?.url ?? "" });
+		const { background, backgroundChosen } = store.getState();
+		const adminDefault = backgrounds.find((item) => item.isDefault);
+		if (!backgrounds.some((item) => item.url === background))
+			store.setState({
+				background: adminDefault?.url ?? backgrounds[0]?.url ?? "",
+				backgroundChosen: false,
+			});
+		else if (!backgroundChosen && adminDefault)
+			store.setState({ background: adminDefault.url });
 	}, [backgrounds, store]);
 
 	return (

@@ -52,8 +52,16 @@ export function BoothPreview({
 	canCapture,
 	onPrepareSound,
 }: Props) {
-	const { connected, resolution, photo, countdown, message, frameReady } =
-		useStore(store);
+	const {
+		connected,
+		resolution,
+		photo,
+		countdown,
+		message,
+		frameReady,
+		settings,
+		keyDetected,
+	} = useStore(store);
 	const [photoMode, setPhotoMode] = useState(false);
 	const isPhotoMode = photoMode && !photo;
 
@@ -144,6 +152,13 @@ export function BoothPreview({
 				{countdown !== null && <div className="countdown">{countdown}</div>}
 			</div>
 			<BackdropCarousel store={store} backgrounds={backgrounds} />
+			{connected && !photo && settings.greenScreen && keyDetected === false && (
+				<p className="notice" role="status">
+					The camera can&apos;t see the green key color, so green areas
+					won&apos;t be replaced. Stand in front of a green screen, or adjust
+					the key color under Green screen settings.
+				</p>
+			)}
 			{backdropError && (
 				<>
 					<p className="notice" role="alert">

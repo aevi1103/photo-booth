@@ -21,6 +21,7 @@ test("anonymous users must sign in before booth, gallery, quota, and uploads", a
     }
     expect((await anonymous.post("/api/photos", { ...upload, headers: { ...upload.headers, "x-booth-code": "old-code" } })).status()).toBe(401);
     expect((await anonymous.post("/api/backdrops", upload)).status()).toBe(401);
+    expect((await anonymous.patch("/api/backdrops", { data: { file: "backdrop.jpg", hidden: true } })).status()).toBe(401);
   } finally { await anonymous.dispose(); }
 });
 
@@ -137,11 +138,14 @@ test("gallery isolates users while admins can view all including legacy photos",
 
 test("database migration is rerunnable, preserves admin roles and denies direct Storage bypass", async ({ backend }) => {
   await backend.db.exec("insert into storage.objects(bucket_id, name) values ('backdrops', 'existing.jpg');");
+  await backend.db.exec("insert into public.backdrop_settings(file_name, hidden, is_default) values ('existing.jpg', false, true);");
   await backend.db.exec(await readFile("supabase/setup.sql", "utf8"));
   const admin = await backend.db.query<{ role: string }>("select role from public.profiles where id = $1", [adminId]);
   expect(admin.rows[0].role).toBe("admin");
   const backdrops = await backend.db.query("select name from storage.objects where bucket_id = 'backdrops'");
   expect(backdrops.rows).toEqual([{ name: "existing.jpg" }]);
+  const settings = await backend.db.query("select file_name, is_default from public.backdrop_settings");
+  expect(settings.rows).toEqual([{ file_name: "existing.jpg", is_default: true }]);
   await backend.db.exec(`
     alter table storage.objects enable row level security;
     grant usage on schema storage to anon, authenticated;
@@ -152,6 +156,8 @@ test("database migration is rerunnable, preserves admin roles and denies direct 
     await backend.db.exec(`set role ${role};`);
     await expect(backend.db.exec("insert into storage.objects(bucket_id, name) values ('photos', 'bypass.jpg');")).rejects.toThrow(/row-level security/);
     await expect(backend.db.exec("insert into storage.objects(bucket_id, name) values ('backdrops', 'bypass.jpg');")).rejects.toThrow(/row-level security/);
+    await expect(backend.db.exec("select * from public.backdrop_settings;")).rejects.toThrow(/permission denied/);
+    await expect(backend.db.exec("select public.set_backdrop_setting('existing.jpg', true, null);")).rejects.toThrow(/permission denied/);
     await backend.db.exec("reset role;");
   }
   await backend.db.exec("drop policy test_old_permissive_policy on storage.objects;");
@@ -180,6 +186,24 @@ test("backdrop upload is admin-only, validates images, and keeps shared reads pr
     expect(download.headers()["cache-control"]).toBe("private, no-store");
     expect(await download.body()).toEqual(image);
     expect((await request.get("/api/backdrops?file=../photos/private.jpg")).status()).toBe(400);
+    expect((await request.get("/api/backdrops?manage=1")).status()).toBe(403);
+    const manage = await admin.get("/api/backdrops?manage=1");
+    expect(manage.headers()["cache-control"]).toBe("private, no-store");
+    const managed = (await manage.json()).backdrops;
+    expect(managed).toHaveLength(1);
+    expect(managed[0]).toMatchObject({ name: "clouds", hidden: false, isDefault: false });
+    expect((await request.patch("/api/backdrops", { data: { file: managed[0].file, hidden: true } })).status()).toBe(403);
+    expect((await admin.patch("/api/backdrops", { data: { file: managed[0].file } })).status()).toBe(400);
+    expect((await admin.patch("/api/backdrops", { data: { file: "../photos/private.jpg", hidden: true } })).status()).toBe(400);
+    expect((await admin.patch("/api/backdrops", { headers: { Origin: "https://untrusted.test" }, data: { file: managed[0].file, hidden: true } })).status()).toBe(403);
+    expect((await admin.patch("/api/backdrops", { data: { file: `${crypto.randomUUID()}_missing.jpg`, hidden: true } })).status()).toBe(404);
+    expect((await admin.patch("/api/backdrops", { data: { file: managed[0].file, hidden: true, isDefault: true } })).status()).toBe(200);
+    expect((await (await request.get("/api/backdrops")).json()).backdrops).toHaveLength(0);
+    expect((await (await admin.get("/api/backdrops?manage=1")).json()).backdrops[0]).toMatchObject({ hidden: true, isDefault: true });
+    expect((await admin.patch("/api/backdrops", { data: { file: managed[0].file, hidden: false } })).status()).toBe(200);
+    expect((await (await request.get("/api/backdrops")).json()).backdrops[0]).toMatchObject({ name: "clouds", isDefault: true });
+    expect((await admin.patch("/api/backdrops", { data: { file: managed[0].file, isDefault: false } })).status()).toBe(200);
+    expect((await (await request.get("/api/backdrops")).json()).backdrops[0].isDefault).toBeUndefined();
     const quota = await admin.get("/api/account");
     expect((await quota.json()).quota.used).toBe(0);
     backend.storageError = 503;

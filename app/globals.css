@@ -198,6 +198,8 @@
   .backdrop-upload { display: grid; gap: 14px; }
   .backdrop-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 16px; margin-top: 16px; }
   .backdrop-gallery img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px; }
+  .backdrop-gallery figcaption { font-size: 13px; margin: 6px 0; }
+  .backdrop-actions { display: flex; flex-wrap: wrap; gap: 8px; }
   .is-photo-mode .backdrop-picker { display: none; }
   .background-option img { width: 100%; height: 65px; object-fit: cover; }
   .background-option span { display: block; font-size: 11px; padding: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

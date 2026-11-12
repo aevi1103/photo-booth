@@ -75,13 +75,11 @@ If voice recognition reports a network error, it could not reach the browser's s
 
 ### Backdrops
 
-Admins can open **Manage backdrops** from the booth (`/admin/backdrops`) and upload JPEG, PNG, or WebP images up to 4 MiB. Run the updated [`supabase/setup.sql`](supabase/setup.sql) first to create the private `backdrops` bucket. Uploads do not consume photo allowances. Only admins can access the management page or upload API; all signed-in guests can use uploaded backdrops.
+Backdrops are frame overlays: the camera video fills the output and shows through the transparent parts of the selected image. Admins can open **Manage backdrops** from the booth (`/admin/backdrops`) and upload PNG or WebP designs with a transparent window (JPEG is accepted but has no transparency, so it covers the video entirely) up to 4 MiB; around 1153 × 768 pixels works best because designs are stretched to the booth's 3:2 output. Run the updated [`supabase/setup.sql`](supabase/setup.sql) first to create the private `backdrops` bucket and the backdrop curation settings. Uploads do not consume photo allowances. Only admins can access the management page, upload API, or curation API; all signed-in guests can use visible uploaded backdrops.
 
-Uploaded backdrops replace the bundled selection. When there are no uploads, JPEG, PNG, and WebP files in [`public/images`](public/images) provide the defaults. A horizontally scrollable carousel appears directly below the video only when more than one backdrop is available. Choosing an image enables **Replace green screen**; with a single backdrop, enable that setting to use it. Adjust the green-screen settings for the lighting and avoid green clothing and shadows. Backdrops replace green areas, not arbitrary backgrounds.
+Uploaded backdrops appear alongside the bundled frame designs from [`public/frames`](public/frames) in the carousel. On the management page, admins can hide individual uploaded backdrops from the booth and mark one as the **booth default**, which guests start from until they pick another; without a default, the first bundled design is used. A horizontally scrollable carousel appears directly below the video only when more than one design is available. No green screen is needed to use backdrops. Separately, **Replace green screen** can be enabled in the settings to key out green areas of the camera; the booth shows a hint when that is on but the camera cannot see the key color.
 
 Uploaded images are served through the authenticated app API and require no redeployment. Bundled defaults are cached and require a rebuild/redeployment to change; files in `public` are publicly accessible, so do not put sensitive images there.
-
-The frame artwork in [`public/frames/baby-shower.png`](public/frames/baby-shower.png) and the camera-opening coordinates in [`lib/compositor.ts`](lib/compositor.ts) are a matched pair. If you replace the frame with a different layout, update the compositor coordinates too.
 
 ### Gallery and access
 

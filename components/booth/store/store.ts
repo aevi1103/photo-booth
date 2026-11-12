@@ -26,6 +26,8 @@ export type BoothState = {
 	devices: MediaDeviceInfo[];
 	deviceId: string;
 	background: string;
+	backgroundChosen: boolean;
+	keyDetected: boolean | null;
 	frameReady: boolean;
 	connected: boolean;
 	connecting: boolean;
@@ -44,6 +46,8 @@ export function createBoothStore(backgrounds: Backdrop[]): BoothStore {
 		devices: [],
 		deviceId: "",
 		background: backgrounds[0]?.url ?? "",
+		backgroundChosen: false,
+		keyDetected: null,
 		frameReady: false,
 		connected: false,
 		connecting: false,

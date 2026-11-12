@@ -1,4 +1,11 @@
-export type Backdrop = { name: string; url: string };
+export type Backdrop = { name: string; url: string; isDefault?: boolean };
+export type ManagedBackdrop = {
+	file: string;
+	name: string;
+	url: string;
+	hidden: boolean;
+	isDefault: boolean;
+};
 
 export const MAX_BACKDROP_BYTES = 4 * 1024 * 1024;
 export const BACKDROP_SIZE_ERROR = "Backdrops must be 4 MiB or smaller.";

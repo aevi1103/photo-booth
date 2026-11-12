@@ -67,6 +67,8 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 844, height: 390 }
     });
     await page.route("**/api/photos", (route) => route.fulfill({ json: { saved: true } }));
     await page.goto("/");
+    // Quota text renders client-side, so it guarantees hydration before interacting.
+    await expect(page.getByText("20 of 20 photo uploads remaining")).toBeVisible();
     if (viewport.width <= 800) await page.getByRole("button", { name: "Show settings", exact: true }).click();
     await page.getByLabel("CAMERA", { exact: true }).selectOption("facing:user");
     await page.getByRole("button", { name: "Connect", exact: true }).click();
@@ -405,11 +407,7 @@ test("saving optimistically reserves one upload and rolls back when the save fai
   await expect(page.getByText("20 of 20 photo uploads remaining")).toBeVisible();
 });
 
-test("local background replaces green only when enabled", async ({ page }) => {
-  await page.route("**/images/photoboot-bg.jpeg", (route) => route.fulfill({
-    contentType: "image/svg+xml",
-    body: '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="blue"/></svg>',
-  }));
+test("the camera shows through the frame window and green keying stays optional", async ({ page }) => {
   await page.addInitScript(() => {
     const source = document.createElement("canvas");
     source.width = 320; source.height = 180;
@@ -425,17 +423,57 @@ test("local background replaces green only when enabled", async ({ page }) => {
     };
   });
   await page.goto("/");
-  await page.getByLabel("Replace green screen").check();
   await expect(page.getByRole("region", { name: "Choose a backdrop" })).toHaveCount(0);
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await expect(page.getByRole("button", { name: "Take a photo" })).toBeEnabled();
-  await expect.poll(() => page.locator("canvas").evaluate((source: HTMLCanvasElement) => {
+  const sample = () => page.locator("canvas").evaluate((source: HTMLCanvasElement) => {
     const canvas = document.createElement("canvas"); canvas.width = source.width; canvas.height = source.height;
     const context = canvas.getContext("2d")!; context.drawImage(source, 0, 0);
-    const left = context.getImageData(80, 90, 1, 1).data;
-    const behindText = context.getImageData(Math.round(source.width * 710 / 1153), Math.round(source.height * 145 / 768), 1, 1).data;
-    return left[2] > 200 && left[1] < 30 && behindText[2] > 200 && behindText[1] < 30;
-  })).toBe(true);
+    return Array.from(context.getImageData(80, 90, 1, 1).data);
+  });
+  // Without green keying the camera is visible through the frame's transparent window.
+  await expect.poll(async () => {
+    const [red, green] = await sample();
+    return red < 60 && green > 200;
+  }).toBe(true);
+  // Keying replaces green with the pale fallback fill.
+  await page.getByLabel("Replace green screen").check();
+  await expect.poll(async () => {
+    const [red, , blue] = await sample();
+    return red > 180 && blue > 200;
+  }).toBe(true);
+});
+
+test("booth explains when the key color is not visible to the camera", async ({ page }) => {
+  await page.addInitScript(() => {
+    const source = document.createElement("canvas");
+    source.width = 320; source.height = 180;
+    const context = source.getContext("2d")!;
+    Object.assign(window, { cameraColor: "#c8b49a" });
+    navigator.mediaDevices.getUserMedia = async () => {
+      const stream = source.captureStream(10);
+      const paint = () => {
+        context.fillStyle = (window as unknown as { cameraColor: string }).cameraColor;
+        context.fillRect(0, 0, 320, 180);
+        requestAnimationFrame(paint);
+      };
+      paint();
+      return stream;
+    };
+  });
+  await page.goto("/");
+  const hint = page.getByText("can't see the green key color", { exact: false });
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Take a photo" })).toBeEnabled();
+  await expect(hint).toHaveCount(0);
+  await page.getByLabel("Replace green screen").check();
+  await expect(hint).toBeVisible({ timeout: 10_000 });
+  await page.evaluate(() => { (window as unknown as { cameraColor: string }).cameraColor = "#00a000"; });
+  await expect(hint).toHaveCount(0, { timeout: 10_000 });
+  await page.evaluate(() => { (window as unknown as { cameraColor: string }).cameraColor = "#c8b49a"; });
+  await expect(hint).toBeVisible({ timeout: 10_000 });
+  await page.getByLabel("Replace green screen").uncheck();
+  await expect(hint).toHaveCount(0, { timeout: 10_000 });
 });
 
 test("admin uploads backdrops and guests select the carousel below the video", async ({ page, context, backend }) => {
@@ -450,7 +488,10 @@ test("admin uploads backdrops and guests select the carousel below the video", a
   await expect(page.getByText("Backdrop uploaded.", { exact: true })).toBeVisible();
   await expect(page.getByAltText("clouds", { exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Back to booth" }).click();
-  await expect(page.getByRole("region", { name: "Choose a backdrop" })).toHaveCount(0);
+  const merged = page.getByRole("region", { name: "Choose a backdrop" });
+  await expect(merged).toBeVisible();
+  await expect(merged.getByRole("button", { name: "baby shower", exact: true })).toBeVisible();
+  await expect(merged.getByRole("button", { name: "clouds", exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Manage backdrops" }).click();
   await page.getByLabel("Backdrop name").fill("Garden");
   const blue = await page.evaluate(() => {
@@ -467,10 +508,9 @@ test("admin uploads backdrops and guests select the carousel below the video", a
   await page.goto("/");
   const carousel = page.getByRole("region", { name: "Choose a backdrop" });
   await expect(carousel).toBeVisible();
-  await expect(page.getByRole("button", { name: "photoboot bg" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "baby shower", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "garden", exact: true }).click();
   await expect(page.getByRole("button", { name: "garden", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByLabel("Replace green screen")).toBeChecked();
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await expect(page.getByRole("button", { name: "Take a photo" })).toBeEnabled();
   await expect.poll(() => page.locator("canvas").evaluate((source: HTMLCanvasElement) => {
@@ -491,6 +531,89 @@ test("admin uploads backdrops and guests select the carousel below the video", a
   backend.listError = false;
   await page.getByRole("button", { name: "Retry backdrops" }).click();
   await expect(carousel).toBeVisible();
+});
+
+test("jpeg backdrops with a checkerboard window upload as a png with real transparency", async ({ page, context, backend }) => {
+  await context.addCookies([sessionCookie(adminId)]);
+  await page.goto("/admin/backdrops");
+  const images = await page.evaluate(() => {
+    const render = (checkerboard: boolean) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 640; canvas.height = 360;
+      const context = canvas.getContext("2d")!;
+      context.fillStyle = "#f7ecd9"; context.fillRect(0, 0, 640, 360);
+      context.fillStyle = "#8888c8"; context.fillRect(152, 84, 336, 192);
+      if (checkerboard) {
+        context.fillStyle = "#ffffff"; context.fillRect(160, 92, 320, 176);
+        context.fillStyle = "#cccccc";
+        for (let row = 0; row < 11; row++)
+          for (let column = 0; column < 20; column++)
+            if ((row + column) % 2) context.fillRect(160 + column * 16, 92 + row * 16, 16, 16);
+      }
+      return canvas.toDataURL("image/jpeg", 0.9).split(",")[1];
+    };
+    return { checkered: render(true), plain: render(false) };
+  });
+  await page.getByLabel("Backdrop name").fill("Window");
+  await page.getByLabel("Image (JPEG").setInputFiles({ name: "window.jpeg", mimeType: "image/jpeg", buffer: Buffer.from(images.checkered, "base64") });
+  await page.getByRole("button", { name: "Upload backdrop", exact: true }).click();
+  await expect(page.getByText("Backdrop uploaded.", { exact: true })).toBeVisible();
+  const stored = [...backend.objects.keys()].find((key) => key.endsWith("_window.png"));
+  expect(stored).toBeDefined();
+  const png = backend.objects.get(stored!)!;
+  expect([...png.subarray(0, 4)]).toEqual([137, 80, 78, 71]);
+  const pixels = await page.evaluate(async (encoded) => {
+    const blob = await (await fetch(`data:image/png;base64,${encoded}`)).blob();
+    const image = await createImageBitmap(blob);
+    const canvas = document.createElement("canvas");
+    canvas.width = image.width; canvas.height = image.height;
+    const context = canvas.getContext("2d")!;
+    context.drawImage(image, 0, 0);
+    const alpha = (x: number, y: number) => context.getImageData(x, y, 1, 1).data[3];
+    return { width: image.width, height: image.height, window: alpha(320, 180), border: alpha(156, 180), background: alpha(20, 20) };
+  }, png.toString("base64"));
+  expect(pixels).toEqual({ width: 640, height: 360, window: 0, border: 255, background: 255 });
+  await page.getByLabel("Backdrop name").fill("Plain");
+  await page.getByLabel("Image (JPEG").setInputFiles({ name: "plain.jpeg", mimeType: "image/jpeg", buffer: Buffer.from(images.plain, "base64") });
+  await page.getByRole("button", { name: "Upload backdrop", exact: true }).click();
+  await expect(page.getByAltText("plain", { exact: true })).toBeVisible();
+  const plain = [...backend.objects.keys()].find((key) => key.endsWith("_plain.jpg"));
+  expect(plain).toBeDefined();
+  expect(backend.objects.get(plain!)!.equals(Buffer.from(images.plain, "base64"))).toBe(true);
+});
+
+test("admin hides backdrops and assigns the booth default guests start from", async ({ page, context }) => {
+  await context.addCookies([sessionCookie(adminId)]);
+  const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0xff, 0xd9]);
+  for (const name of ["Clouds", "Garden"]) {
+    expect((await page.request.post(`/api/backdrops?name=${name}`, { headers: { "Content-Type": "image/jpeg" }, data: jpeg })).status()).toBe(200);
+  }
+  await page.goto("/admin/backdrops");
+  const clouds = page.locator("figure").filter({ hasText: "clouds" });
+  const garden = page.locator("figure").filter({ hasText: "garden" });
+  await garden.getByRole("button", { name: "Make booth default" }).click();
+  await expect(garden.getByText("· Booth default")).toBeVisible();
+  await clouds.getByRole("button", { name: "Hide from booth" }).click();
+  await expect(clouds.getByText("· Hidden")).toBeVisible();
+  await expect(clouds.getByRole("button", { name: "Make booth default" })).toBeDisabled();
+  await context.addCookies([sessionCookie()]);
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "garden", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "clouds", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "baby shower", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "baby shower", exact: true }).click();
+  await expect(page.getByRole("button", { name: "baby shower", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "garden", exact: true })).toHaveAttribute("aria-pressed", "false");
+  await context.addCookies([sessionCookie(adminId)]);
+  await page.goto("/admin/backdrops");
+  await garden.getByRole("button", { name: "Use built-in default" }).click();
+  await expect(garden.getByRole("button", { name: "Make booth default" })).toBeVisible();
+  await clouds.getByRole("button", { name: "Show in booth" }).click();
+  await expect(clouds.getByRole("button", { name: "Hide from booth" })).toBeVisible();
+  await context.addCookies([sessionCookie()]);
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "baby shower", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "clouds", exact: true })).toBeVisible();
 });
 
 for (const interim of [false, true]) {

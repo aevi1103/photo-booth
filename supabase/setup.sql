@@ -14,6 +14,45 @@ create policy "Booth backdrops are server managed" on storage.objects
 as restrictive for all to anon, authenticated
 using (bucket_id <> 'backdrops') with check (bucket_id <> 'backdrops');
 
+-- Admin curation of uploaded backdrops: hide individual files and assign one booth default.
+create table if not exists public.backdrop_settings (
+  file_name text primary key,
+  hidden boolean not null default false,
+  is_default boolean not null default false
+);
+create unique index if not exists backdrop_settings_single_default
+  on public.backdrop_settings (is_default) where is_default;
+alter table public.backdrop_settings enable row level security;
+revoke all on public.backdrop_settings from anon, authenticated;
+grant all on public.backdrop_settings to service_role;
+
+create or replace function public.get_backdrop_settings()
+returns table(file_name text, hidden boolean, is_default boolean)
+language sql stable security definer set search_path = ''
+as $$
+  select s.file_name, s.hidden, s.is_default from public.backdrop_settings s;
+$$;
+
+create or replace function public.set_backdrop_setting(p_file_name text, p_hidden boolean, p_is_default boolean)
+returns void language plpgsql security definer set search_path = ''
+as $$
+begin
+  if p_is_default then
+    update public.backdrop_settings set is_default = false where is_default and file_name <> p_file_name;
+  end if;
+  insert into public.backdrop_settings (file_name, hidden, is_default)
+  values (p_file_name, coalesce(p_hidden, false), coalesce(p_is_default, false))
+  on conflict (file_name) do update set
+    hidden = coalesce(p_hidden, backdrop_settings.hidden),
+    is_default = coalesce(p_is_default, backdrop_settings.is_default);
+end;
+$$;
+
+revoke all on function public.get_backdrop_settings() from public, anon, authenticated;
+revoke all on function public.set_backdrop_setting(text, boolean, boolean) from public, anon, authenticated;
+grant execute on function public.get_backdrop_settings() to service_role;
+grant execute on function public.set_backdrop_setting(text, boolean, boolean) to service_role;
+
 create table if not exists public.photo_upload_limits (
   id boolean primary key default true check (id),
   window_start timestamptz not null,
