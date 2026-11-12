@@ -73,7 +73,11 @@ If voice recognition reports a network error, it could not reach the browser's s
 
 ### Backdrops
 
-To replace a green screen, enable **Replace green screen** and choose a backdrop. JPEG, PNG, and WebP files in [`public/images`](public/images) appear in the picker. Add files before starting the server or rebuilding/redeploying; the list is cached and bundled with the app. Files in `public` are publicly accessible, so do not put sensitive images there. Adjust the green-screen settings for the lighting and avoid green clothing and shadows.
+Admins can open **Manage backdrops** from the booth (`/admin/backdrops`) and upload JPEG, PNG, or WebP images up to 4 MiB. Run the updated [`supabase/setup.sql`](supabase/setup.sql) first to create the private `backdrops` bucket. Uploads do not consume photo allowances. Only admins can access the management page or upload API; all signed-in guests can use uploaded backdrops.
+
+Uploaded backdrops replace the bundled selection. When there are no uploads, JPEG, PNG, and WebP files in [`public/images`](public/images) provide the defaults. A horizontally scrollable carousel appears directly below the video only when more than one backdrop is available. Choosing an image enables **Replace green screen**; with a single backdrop, enable that setting to use it. Adjust the green-screen settings for the lighting and avoid green clothing and shadows. Backdrops replace green areas, not arbitrary backgrounds.
+
+Uploaded images are served through the authenticated app API and require no redeployment. Bundled defaults are cached and require a rebuild/redeployment to change; files in `public` are publicly accessible, so do not put sensitive images there.
 
 The frame artwork in [`public/frames/baby-shower.png`](public/frames/baby-shower.png) and the camera-opening coordinates in [`lib/compositor.ts`](lib/compositor.ts) are a matched pair. If you replace the frame with a different layout, update the compositor coordinates too.
 
@@ -111,7 +115,7 @@ Do not release reservations for requests that may still be running or delete upl
 
 Photos from the older code-based booth have no trustworthy user ownership. They remain intact, visible to admins only, and are not automatically assigned to Google accounts or counted toward the new allowance. Manage or delete them through **Supabase → Storage → photos**.
 
-Uploads are limited to JPEGs up to 4 MiB and checked on the server for size and JPEG signature. A shared server-side limiter allows 60 upload attempts per minute, including for admins. Images are not decoded or scanned. Any Google account allowed by the configured Supabase/Google provider can sign in; the allowance is per account, not an event invitation system. Before public deployment, configure edge rate limiting for authentication and `/api/` endpoints, monitor usage, and tell guests how their photos are stored.
+Photo uploads are limited to JPEGs up to 4 MiB and checked on the server for size and JPEG signature. A shared server-side limiter allows 60 photo/backdrop upload attempts per minute, including for admins. Images are not decoded or scanned on the server. Any Google account allowed by the configured Supabase/Google provider can sign in; the allowance is per account, not an event invitation system. Before public deployment, configure edge rate limiting for authentication and `/api/` endpoints, monitor usage, and tell guests how their photos are stored.
 
 ## Camera setup
 
@@ -139,7 +143,7 @@ Automated mobile-viewport tests use synthetic camera streams. Test actual iOS/An
 
 Vercel Functions have a [4.5 MB request limit](https://vercel.com/docs/functions/limitations#request-body-size), so the app accepts JPEGs up to **4 MiB (4,194,304 bytes)**. The browser and server both enforce this limit. Larger captures offer a download fallback without sending an oversized request or consuming an upload slot. The private Supabase bucket may retain its 8 MiB limit; the app enforces the lower limit, so no database change is needed.
 
-For Preview deployments, use that deployment's exact HTTPS origin as `APP_URL` and explicitly allowlist its callback in Supabase. Do not reuse the production `APP_URL` on a different preview domain or broadly wildcard untrusted preview URLs. Redeploy after changing environment variables. Frame and backdrop changes require a new deployment; runtime photo writes go to Supabase, not Vercel's filesystem.
+For Preview deployments, use that deployment's exact HTTPS origin as `APP_URL` and explicitly allowlist its callback in Supabase. Do not reuse the production `APP_URL` on a different preview domain or broadly wildcard untrusted preview URLs. Redeploy after changing environment variables. Frame and bundled-default backdrop changes require a new deployment; runtime photo and admin backdrop uploads go to Supabase, not Vercel's filesystem.
 
 Check [Vercel pricing](https://vercel.com/pricing) and usage before the event. Free hosting is not unlimited, and Supabase has its own storage and usage limits.
 

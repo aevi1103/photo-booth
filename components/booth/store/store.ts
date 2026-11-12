@@ -1,6 +1,8 @@
 import { createStore, type StoreApi } from "zustand/vanilla";
 
-export type Backdrop = { name: string; url: string };
+export type { Backdrop } from "@/lib/backdrops";
+
+import type { Backdrop } from "@/lib/backdrops";
 export type Photo = { url: string; blob: Blob };
 export type Settings = {
 	color: string;

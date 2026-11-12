@@ -2,16 +2,14 @@
 
 import { Sparkles } from "lucide-react";
 import { useStore } from "zustand";
-import type { Backdrop, BoothStore } from "@/components/booth/store/store";
+import type { BoothStore } from "@/components/booth/store/store";
 import { Button } from "@/components/ui/button";
 
 export function BoothSettings({
 	store,
-	backgrounds,
 	onConnect,
 }: {
 	store: BoothStore;
-	backgrounds: Backdrop[];
 	onConnect: (deviceId: string) => void;
 }) {
 	const {
@@ -19,7 +17,6 @@ export function BoothSettings({
 		settingsOpen,
 		devices,
 		deviceId,
-		background,
 		connecting,
 		countdown,
 		photo,
@@ -96,30 +93,6 @@ export function BoothSettings({
 					/>{" "}
 					Replace green screen
 				</label>
-				{settings.greenScreen && (
-					<>
-						<fieldset className="background-list">
-							<legend className="backdrop-label">CHOOSE A BACKDROP</legend>
-							{backgrounds.map((item) => (
-								<button
-									key={item.url}
-									type="button"
-									className={`background-option ${background === item.url ? "selected" : ""}`}
-									aria-pressed={background === item.url}
-									onClick={() => store.setState({ background: item.url })}
-								>
-									<img src={item.url} alt="" />
-									<span>{item.name}</span>
-								</button>
-							))}
-						</fieldset>
-						{!backgrounds.length && (
-							<p className="small">
-								Add images to the public/images folder to use a backdrop.
-							</p>
-						)}
-					</>
-				)}
 				<label className="checkbox">
 					<input
 						type="checkbox"

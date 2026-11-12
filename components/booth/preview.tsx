@@ -12,14 +12,18 @@ import {
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { useStore } from "zustand";
+import { BackdropCarousel } from "@/components/booth/backdrop-carousel";
 import type { UploadView } from "@/components/booth/hooks/use-booth-capture";
-import type { BoothStore } from "@/components/booth/store/store";
+import type { Backdrop, BoothStore } from "@/components/booth/store/store";
 import { Button, buttonVariants } from "@/components/ui/button";
 import type { useBoothSounds } from "@/lib/use-booth-sounds";
 import type { useVoiceTrigger } from "@/lib/use-voice-trigger";
 
 type Props = {
 	store: BoothStore;
+	backgrounds: Backdrop[];
+	backdropError?: string;
+	onRetryBackdrops: () => void;
 	videoRef: React.RefObject<HTMLVideoElement | null>;
 	canvasRef: React.RefObject<HTMLCanvasElement | null>;
 	sounds: ReturnType<typeof useBoothSounds>;
@@ -34,6 +38,9 @@ type Props = {
 
 export function BoothPreview({
 	store,
+	backgrounds,
+	backdropError,
+	onRetryBackdrops,
 	videoRef,
 	canvasRef,
 	sounds,
@@ -136,6 +143,17 @@ export function BoothPreview({
 				)}
 				{countdown !== null && <div className="countdown">{countdown}</div>}
 			</div>
+			<BackdropCarousel store={store} backgrounds={backgrounds} />
+			{backdropError && (
+				<>
+					<p className="notice" role="alert">
+						{backdropError}
+					</p>
+					<Button variant="outline" onClick={onRetryBackdrops}>
+						Retry backdrops
+					</Button>
+				</>
+			)}
 			{message && (
 				<p className="notice" role="alert">
 					{message}

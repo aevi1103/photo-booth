@@ -4,6 +4,16 @@ insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_typ
 values ('photos', 'photos', false, 8388608, array['image/jpeg'])
 on conflict (id) do update set public = excluded.public, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
 
+-- Backdrops are shared with signed-in guests, but uploaded only by the admin API.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('backdrops', 'backdrops', false, 4194304, array['image/jpeg', 'image/png', 'image/webp'])
+on conflict (id) do update set public = excluded.public, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "Booth backdrops are server managed" on storage.objects;
+create policy "Booth backdrops are server managed" on storage.objects
+as restrictive for all to anon, authenticated
+using (bucket_id <> 'backdrops') with check (bucket_id <> 'backdrops');
+
 create table if not exists public.photo_upload_limits (
   id boolean primary key default true check (id),
   window_start timestamptz not null,

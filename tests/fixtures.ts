@@ -85,6 +85,28 @@ export const test = base.extend<{ backend: Backend }, { supabase: Backend }>({
           await db.query("update public.photo_uploads set status = $1 where id = $2", [body.status, url.searchParams.get("id")?.replace("eq.", "")]);
           response.statusCode = 204; response.end(); return;
         }
+        if (url.pathname === "/storage/v1/object/list/backdrops") {
+          if (backend.listError) {
+            response.statusCode = 503; response.end(JSON.stringify({ message: "Test listing failure" })); return;
+          }
+          const result = await db.query("select id, name, created_at from storage.objects where bucket_id = 'backdrops' order by name limit $1 offset $2", [body.limit, body.offset]);
+          response.end(JSON.stringify(result.rows)); return;
+        }
+        if (url.pathname.startsWith("/storage/v1/object/backdrops/")) {
+          const path = decodeURIComponent(url.pathname.slice("/storage/v1/object/backdrops/".length));
+          if (request.method === "GET") {
+            const image = backend.objects.get(`backdrops/${path}`);
+            if (!image) { response.statusCode = 404; response.end(JSON.stringify({ message: "Not found" })); return; }
+            response.setHeader("Content-Type", path.endsWith(".png") ? "image/png" : "image/jpeg");
+            response.end(image); return;
+          }
+          if (backend.storageError) {
+            response.statusCode = backend.storageError; response.end(JSON.stringify({ statusCode: String(backend.storageError), message: "Test upload failure" })); return;
+          }
+          backend.objects.set(`backdrops/${path}`, bytes);
+          await db.query("insert into storage.objects(bucket_id, name) values ('backdrops', $1)", [path]);
+          response.end(JSON.stringify({ Key: `backdrops/${path}` })); return;
+        }
         if (url.pathname.startsWith("/storage/v1/object/photos/")) {
           if (backend.storageError) {
             response.statusCode = backend.storageError;

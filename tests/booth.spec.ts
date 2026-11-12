@@ -1,4 +1,4 @@
-import { expect, test } from "./fixtures";
+import { adminId, expect, sessionCookie, test } from "./fixtures";
 import { readFile } from "node:fs/promises";
 
 test.beforeEach(async ({ page }) => {
@@ -426,7 +426,7 @@ test("local background replaces green only when enabled", async ({ page }) => {
   });
   await page.goto("/");
   await page.getByLabel("Replace green screen").check();
-  await expect(page.getByRole("button", { name: "photoboot bg" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("region", { name: "Choose a backdrop" })).toHaveCount(0);
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await expect(page.getByRole("button", { name: "Take a photo" })).toBeEnabled();
   await expect.poll(() => page.locator("canvas").evaluate((source: HTMLCanvasElement) => {
@@ -436,6 +436,61 @@ test("local background replaces green only when enabled", async ({ page }) => {
     const behindText = context.getImageData(Math.round(source.width * 710 / 1153), Math.round(source.height * 145 / 768), 1, 1).data;
     return left[2] > 200 && left[1] < 30 && behindText[2] > 200 && behindText[1] < 30;
   })).toBe(true);
+});
+
+test("admin uploads backdrops and guests select the carousel below the video", async ({ page, context, backend }) => {
+  await context.addCookies([sessionCookie(adminId)]);
+  await page.goto("/");
+  await page.getByRole("link", { name: "Manage backdrops" }).click();
+  await expect(page.getByRole("heading", { name: "Manage backdrops" })).toBeVisible();
+  await expect(page.getByText("No uploaded backdrops yet.", { exact: false })).toBeVisible();
+  await page.getByLabel("Backdrop name").fill("Clouds");
+  await page.getByLabel("Image (JPEG").setInputFiles("public/images/photoboot-bg.jpeg");
+  await page.getByRole("button", { name: "Upload backdrop", exact: true }).click();
+  await expect(page.getByText("Backdrop uploaded.", { exact: true })).toBeVisible();
+  await expect(page.getByAltText("clouds", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Back to booth" }).click();
+  await expect(page.getByRole("region", { name: "Choose a backdrop" })).toHaveCount(0);
+  await page.getByRole("link", { name: "Manage backdrops" }).click();
+  await page.getByLabel("Backdrop name").fill("Garden");
+  const blue = await page.evaluate(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 320; canvas.height = 180;
+    const context = canvas.getContext("2d")!;
+    context.fillStyle = "blue"; context.fillRect(0, 0, 320, 180);
+    return canvas.toDataURL("image/png").split(",")[1];
+  });
+  await page.getByLabel("Image (JPEG").setInputFiles({ name: "garden.png", mimeType: "image/png", buffer: Buffer.from(blue, "base64") });
+  await page.getByRole("button", { name: "Upload backdrop", exact: true }).click();
+  await expect(page.getByAltText("garden", { exact: true })).toBeVisible();
+  await context.addCookies([sessionCookie()]);
+  await page.goto("/");
+  const carousel = page.getByRole("region", { name: "Choose a backdrop" });
+  await expect(carousel).toBeVisible();
+  await expect(page.getByRole("button", { name: "photoboot bg" })).toHaveCount(0);
+  await page.getByRole("button", { name: "garden", exact: true }).click();
+  await expect(page.getByRole("button", { name: "garden", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByLabel("Replace green screen")).toBeChecked();
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Take a photo" })).toBeEnabled();
+  await expect.poll(() => page.locator("canvas").evaluate((source: HTMLCanvasElement) => {
+    const canvas = document.createElement("canvas"); canvas.width = source.width; canvas.height = source.height;
+    const context = canvas.getContext("2d")!; context.drawImage(source, 0, 0);
+    const pixel = context.getImageData(80, 90, 1, 1).data;
+    return pixel[2] > 200 && pixel[1] < 30;
+  })).toBe(true);
+  const preview = await page.locator(".preview").boundingBox();
+  const picker = await carousel.boundingBox();
+  expect(picker!.y).toBeGreaterThanOrEqual(preview!.y + preview!.height);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(carousel).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  backend.listError = true;
+  await page.reload();
+  await expect(page.getByRole("alert").filter({ hasText: "Could not load backdrops" })).toBeVisible();
+  backend.listError = false;
+  await page.getByRole("button", { name: "Retry backdrops" }).click();
+  await expect(carousel).toBeVisible();
 });
 
 for (const interim of [false, true]) {

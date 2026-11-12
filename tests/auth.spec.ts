@@ -1,4 +1,5 @@
 import { test, expect, userId, otherId, adminId, sessionCookie } from "./fixtures";
+import { readFile } from "node:fs/promises";
 
 const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0xff, 0xd9]);
 const upload = { headers: { "content-type": "image/jpeg" }, data: jpeg };
@@ -11,12 +12,15 @@ test("anonymous users must sign in before booth, gallery, quota, and uploads", a
   await expect(page.locator("video")).toHaveCount(0);
   await page.goto("/gallery");
   await expect(page).toHaveURL(/\/login$/);
+  await page.goto("/admin/backdrops");
+  await expect(page).toHaveURL(/\/login$/);
   const anonymous = await playwright.request.newContext({ baseURL: "http://127.0.0.1:3210", storageState: { cookies: [], origins: [] } });
   try {
-    for (const path of ["/api/photos", "/api/account"]) {
+    for (const path of ["/api/photos", "/api/account", "/api/backdrops"]) {
       expect((await anonymous.get(path)).status()).toBe(401);
     }
     expect((await anonymous.post("/api/photos", { ...upload, headers: { ...upload.headers, "x-booth-code": "old-code" } })).status()).toBe(401);
+    expect((await anonymous.post("/api/backdrops", upload)).status()).toBe(401);
   } finally { await anonymous.dispose(); }
 });
 
@@ -132,10 +136,12 @@ test("gallery isolates users while admins can view all including legacy photos",
 });
 
 test("database migration is rerunnable, preserves admin roles and denies direct Storage bypass", async ({ backend }) => {
-  const { readFile } = await import("node:fs/promises");
-  await backend.db.exec(await readFile("supabase\\setup.sql", "utf8"));
+  await backend.db.exec("insert into storage.objects(bucket_id, name) values ('backdrops', 'existing.jpg');");
+  await backend.db.exec(await readFile("supabase/setup.sql", "utf8"));
   const admin = await backend.db.query<{ role: string }>("select role from public.profiles where id = $1", [adminId]);
   expect(admin.rows[0].role).toBe("admin");
+  const backdrops = await backend.db.query("select name from storage.objects where bucket_id = 'backdrops'");
+  expect(backdrops.rows).toEqual([{ name: "existing.jpg" }]);
   await backend.db.exec(`
     alter table storage.objects enable row level security;
     grant usage on schema storage to anon, authenticated;
@@ -145,9 +151,40 @@ test("database migration is rerunnable, preserves admin roles and denies direct 
   for (const role of ["anon", "authenticated"]) {
     await backend.db.exec(`set role ${role};`);
     await expect(backend.db.exec("insert into storage.objects(bucket_id, name) values ('photos', 'bypass.jpg');")).rejects.toThrow(/row-level security/);
+    await expect(backend.db.exec("insert into storage.objects(bucket_id, name) values ('backdrops', 'bypass.jpg');")).rejects.toThrow(/row-level security/);
     await backend.db.exec("reset role;");
   }
   await backend.db.exec("drop policy test_old_permissive_policy on storage.objects;");
+});
+
+test("backdrop upload is admin-only, validates images, and keeps shared reads private", async ({ page, request, playwright, backend }) => {
+  const image = await readFile("public/images/photoboot-bg.jpeg");
+  expect((await request.post("/api/backdrops?name=Clouds", { headers: { "Content-Type": "image/jpeg" }, data: image })).status()).toBe(403);
+  await page.goto("/");
+  await expect(page.getByRole("link", { name: "Manage backdrops" })).toHaveCount(0);
+  await page.goto("/admin/backdrops");
+  await expect(page).toHaveURL("/");
+  const admin = await playwright.request.newContext({ baseURL: "http://127.0.0.1:3210", storageState: { cookies: [sessionCookie(adminId)], origins: [] } });
+  try {
+    expect((await admin.post("/api/backdrops", { headers: { "Content-Type": "image/svg+xml" }, data: "<svg/>" })).status()).toBe(415);
+    expect((await admin.post("/api/backdrops", { headers: { "Content-Type": "image/jpeg" }, data: "not an image" })).status()).toBe(400);
+    expect((await admin.post("/api/backdrops", { headers: { "Content-Type": "image/jpeg", Origin: "https://untrusted.test" }, data: image })).status()).toBe(403);
+    expect((await admin.post("/api/backdrops", { headers: { "Content-Type": "image/jpeg" }, data: Buffer.alloc(4 * 1024 * 1024 + 1) })).status()).toBe(413);
+    expect((await admin.post("/api/backdrops?name=Clouds", { headers: { "Content-Type": "image/jpeg" }, data: image })).status()).toBe(200);
+    const listing = await request.get("/api/backdrops");
+    expect(listing.headers()["cache-control"]).toBe("private, no-store");
+    const { backdrops } = await listing.json();
+    expect(backdrops).toHaveLength(1);
+    expect(backdrops[0].name).toBe("clouds");
+    const download = await request.get(backdrops[0].url);
+    expect(download.headers()["cache-control"]).toBe("private, no-store");
+    expect(await download.body()).toEqual(image);
+    expect((await request.get("/api/backdrops?file=../photos/private.jpg")).status()).toBe(400);
+    const quota = await admin.get("/api/account");
+    expect((await quota.json()).quota.used).toBe(0);
+    backend.storageError = 503;
+    expect((await admin.post("/api/backdrops", { headers: { "Content-Type": "image/jpeg" }, data: image })).status()).toBe(503);
+  } finally { await admin.dispose(); }
 });
 
 test("booth shows last upload and disables manual and voice capture at zero", async ({ page, backend }) => {

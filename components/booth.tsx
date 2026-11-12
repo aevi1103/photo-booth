@@ -2,14 +2,18 @@
 
 import { Cloud, Sparkles } from "lucide-react";
 import Link from "next/link";
+import { useEffect } from "react";
 import { useBoothController } from "@/components/booth/hooks/use-booth-controller";
 import { BoothPreview } from "@/components/booth/preview";
 import { BoothSettings } from "@/components/booth/settings";
 import type { Backdrop } from "@/components/booth/store/store";
 import { SignOut } from "@/components/sign-out";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { useBackdrops } from "@/lib/queries/backdrops";
 
-export function Booth({ backgrounds }: { backgrounds: Backdrop[] }) {
+export function Booth({ backgrounds: defaults }: { backgrounds: Backdrop[] }) {
+	const backdrops = useBackdrops();
+	const backgrounds = backdrops.data?.length ? backdrops.data : defaults;
 	const {
 		store,
 		sounds,
@@ -26,6 +30,11 @@ export function Booth({ backgrounds }: { backgrounds: Backdrop[] }) {
 		prepareSound,
 	} = useBoothController(backgrounds);
 
+	useEffect(() => {
+		if (!backgrounds.some((item) => item.url === store.getState().background))
+			store.setState({ background: backgrounds[0]?.url ?? "" });
+	}, [backgrounds, store]);
+
 	return (
 		<main className="booth-shell capture-shell">
 			<header className="topbar">
@@ -33,6 +42,17 @@ export function Booth({ backgrounds }: { backgrounds: Backdrop[] }) {
 					<Cloud size={26} /> little cloud <span>PHOTO BOOTH</span>
 				</div>
 				<div className="account-navigation">
+					{quota.data?.role === "admin" && (
+						<Link
+							href="/admin/backdrops"
+							className={buttonVariants({
+								variant: "outline",
+								className: "booth-navigation",
+							})}
+						>
+							Manage backdrops
+						</Link>
+					)}
 					<Link
 						href="/gallery"
 						className={buttonVariants({
@@ -93,6 +113,11 @@ export function Booth({ backgrounds }: { backgrounds: Backdrop[] }) {
 			<div className="booth-grid">
 				<BoothPreview
 					store={store}
+					backgrounds={backgrounds}
+					backdropError={
+						backdrops.isError ? backdrops.error.message : undefined
+					}
+					onRetryBackdrops={() => void backdrops.refetch()}
 					videoRef={videoRef}
 					canvasRef={canvasRef}
 					sounds={sounds}
@@ -106,7 +131,6 @@ export function Booth({ backgrounds }: { backgrounds: Backdrop[] }) {
 				/>
 				<BoothSettings
 					store={store}
-					backgrounds={backgrounds}
 					onConnect={(deviceId) => void connect(deviceId)}
 				/>
 			</div>
