@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useBoothCamera } from "@/components/booth/hooks/use-booth-camera";
 import { useBoothCapture } from "@/components/booth/hooks/use-booth-capture";
 import { useBoothPreview } from "@/components/booth/hooks/use-booth-preview";
@@ -12,8 +12,14 @@ import { quotaAllowsCapture, useQuota } from "@/lib/queries/account";
 import { useBoothSounds } from "@/lib/use-booth-sounds";
 import { useVoiceTrigger } from "@/lib/use-voice-trigger";
 
+const useHydrationEffect =
+	typeof window === "undefined" ? useEffect : useLayoutEffect;
+
 export function useBoothController(backgrounds: Backdrop[]) {
 	const [store] = useState(() => createBoothStore(backgrounds));
+	useHydrationEffect(() => {
+		void store.persist.rehydrate();
+	}, [store]);
 	const sounds = useBoothSounds();
 	const streamRef = useRef<MediaStream | null>(null);
 	const quota = useQuota();
@@ -25,7 +31,7 @@ export function useBoothController(backgrounds: Backdrop[]) {
 		streamRef,
 		sounds,
 	});
-	const { connect } = useBoothCamera({
+	const camera = useBoothCamera({
 		store,
 		videoRef,
 		streamRef,
@@ -40,12 +46,12 @@ export function useBoothController(backgrounds: Backdrop[]) {
 		store,
 		sounds,
 		voice,
-		videoRef,
+		camera,
 		canvasRef,
 		quota,
 		canCapture: quotaAllowsCapture(quota.status, quota.data),
 		startCountdown: capture.startCountdown,
-		connect,
+		connect: camera.connect,
 		upload: capture.upload,
 		uploadView: capture.uploadView,
 		retake: capture.retake,

@@ -21,8 +21,7 @@ export function useBoothPreview(store: BoothStore) {
 
 	useEffect(() => {
 		const canvas = canvasRef.current;
-		const video = videoRef.current;
-		if (!canvas || !video) return;
+		if (!canvas) return;
 		let compositor: Compositor;
 		try {
 			compositor = createCompositor(canvas);
@@ -41,10 +40,13 @@ export function useBoothPreview(store: BoothStore) {
 		let animation = 0;
 		const render = () => {
 			try {
-				if (video.readyState >= 2) compositor.draw(video, settingsRef.current);
+				const video = videoRef.current;
+				if (video && video.readyState >= 2)
+					compositor.draw(video, settingsRef.current);
 				animation = requestAnimationFrame(render);
 			} catch (error) {
 				store.setState({
+					frameReady: false,
 					message:
 						error instanceof Error
 							? error.message
@@ -63,26 +65,32 @@ export function useBoothPreview(store: BoothStore) {
 	// The selected carousel image is the frame overlay; the camera shows
 	// through its transparent areas.
 	useEffect(() => {
+		store.setState({ frameReady: false, frameError: "" });
 		if (!background) return;
-		store.setState({ frameReady: false });
 		let cancelled = false;
 		const image = new Image();
 		image.crossOrigin = "anonymous";
 		image.onload = () => {
 			if (cancelled || !compositorRef.current) return;
 			try {
-				compositorRef.current.setFrame(image);
-				store.setState({ frameReady: true });
-			} catch {
+				const frameSize = compositorRef.current.setFrame(image);
+				const video = videoRef.current;
+				if (video && video.readyState >= 2)
+					compositorRef.current.draw(video, settingsRef.current);
+				store.setState({ frameReady: true, frameSize });
+			} catch (error) {
 				store.setState({
-					message: "Could not use that frame. Try another design.",
+					frameError:
+						error instanceof Error
+							? error.message
+							: "Could not use that frame. Try another design.",
 				});
 			}
 		};
 		image.onerror = () => {
 			if (!cancelled)
 				store.setState({
-					message:
+					frameError:
 						"Could not load that frame image. Pick another one or refresh the page.",
 				});
 		};

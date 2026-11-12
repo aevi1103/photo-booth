@@ -14,7 +14,7 @@ export const viewport: Viewport = { themeColor: "#568eae" };
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className="h-full antialiased">
-      <body className="min-h-full flex flex-col">
+      <body className="flex min-h-full flex-col font-[Arial,sans-serif]">
         <QueryProvider>{children}</QueryProvider>
       </body>
     </html>

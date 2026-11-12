@@ -44,6 +44,7 @@ test("Google OAuth uses PKCE, writes HttpOnly cookies and returns only to the bo
 test("sign out removes access and rejects cross-origin signout", async ({ page, request }) => {
   expect((await request.post("/auth/logout", { headers: { origin: "https://example.com" } })).status()).toBe(403);
   await page.goto("/");
+  await page.getByRole("button", { name: "Menu", exact: true }).click();
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
   await expect(page).toHaveURL(/\/login$/);
   await page.goto("/");

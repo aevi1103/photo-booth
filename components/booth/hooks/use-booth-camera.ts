@@ -1,7 +1,8 @@
 "use client";
 
 import type { RefObject } from "react";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type Webcam from "react-webcam";
 import type { BoothStore, Settings } from "@/components/booth/store/store";
 import type { createCompositor } from "@/lib/compositor";
 import type { useBoothSounds } from "@/lib/use-booth-sounds";
@@ -11,6 +12,11 @@ type SoundControls = Pick<
 	ReturnType<typeof useBoothSounds>,
 	"prepare" | "cancel"
 >;
+type CameraSession = {
+	id: number;
+	selected: string;
+	constraints: MediaTrackConstraints;
+};
 
 export function useBoothCamera({
 	store,
@@ -30,64 +36,100 @@ export function useBoothCamera({
 	onInterrupted: () => void;
 }) {
 	const connectionRef = useRef(0);
-	const connectingRef = useRef(false);
+	const [session, setSession] = useState<CameraSession | null>(null);
 	const { prepare: prepareSound, cancel: cancelSound } = sounds;
 
 	useEffect(
 		() => () => {
 			connectionRef.current += 1;
-			streamRef.current?.getTracks().forEach((track) => {
-				track.stop();
+			streamRef.current = null;
+			videoRef.current = null;
+			cancelSound();
+			onInterrupted();
+			store.setState({ connected: false, connecting: false });
+		},
+		[cancelSound, onInterrupted, store, streamRef, videoRef],
+	);
+
+	const onError = useCallback(
+		(connection: number, error: unknown) => {
+			if (connection !== connectionRef.current) return;
+			connectionRef.current += 1;
+			cancelSound();
+			onInterrupted();
+			streamRef.current = null;
+			setSession(null);
+			const name = error instanceof Error ? error.name : "";
+			const explanation =
+				name === "NotAllowedError"
+					? "Allow camera access in your browser settings, then press Connect. Open this page directly in Safari or Chrome rather than an in-app browser."
+					: name === "NotFoundError" || name === "OverconstrainedError"
+						? "That camera is unavailable. Try Default camera or another camera. External Cam Link cameras require support from your phone and browser."
+						: name === "NotReadableError"
+							? "The camera is busy. Close other camera apps or browser tabs, then press Connect."
+							: error instanceof Error
+								? error.message
+								: typeof error === "string"
+									? error
+									: "Could not connect the camera.";
+			store.setState({
+				connected: false,
+				connecting: false,
+				message: `Camera error: ${explanation}`,
 			});
 		},
-		[streamRef],
+		[cancelSound, onInterrupted, store, streamRef],
 	);
 
 	const connect = useCallback(
-		async (selected: string) => {
-			if (connectingRef.current) return;
-			connectingRef.current = true;
+		(selected: string) => {
+			if (store.getState().connecting) return;
 			void prepareSound();
-			const connection = ++connectionRef.current;
-			store.setState({ connecting: true, message: "", connected: false });
-			try {
-				if (!navigator.mediaDevices?.getUserMedia)
-					throw new Error(
+			const id = ++connectionRef.current;
+			streamRef.current = null;
+			store.setState({ connecting: true, connected: false, message: "" });
+			if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+				onError(
+					id,
+					new Error(
 						"Camera access requires HTTPS or localhost and a supported browser.",
-					);
-				streamRef.current?.getTracks().forEach((track) => {
-					track.stop();
-				});
-				const facing =
-					selected === "facing:user"
-						? "user"
-						: selected === "facing:environment"
-							? "environment"
-							: null;
-				const stream = await navigator.mediaDevices.getUserMedia({
-					audio: false,
-					video: {
-						...(facing
-							? { facingMode: { exact: facing } }
-							: selected
-								? { deviceId: { exact: selected } }
-								: {}),
-						width: { ideal: 1920 },
-						height: { ideal: 1080 },
-					},
-				});
-				if (connection !== connectionRef.current) {
-					stream.getTracks().forEach((track) => {
-						track.stop();
-					});
-					return;
-				}
-				streamRef.current = stream;
+					),
+				);
+				return;
+			}
+			const facing =
+				selected === "facing:user"
+					? "user"
+					: selected === "facing:environment"
+						? "environment"
+						: null;
+			setSession({
+				id,
+				selected,
+				constraints: {
+					...(facing
+						? { facingMode: { exact: facing } }
+						: selected
+							? { deviceId: { exact: selected } }
+							: {}),
+					width: { ideal: 1920 },
+					height: { ideal: 1080 },
+				},
+			});
+		},
+		[onError, prepareSound, store, streamRef],
+	);
+
+	const onUserMedia = useCallback(
+		async (current: CameraSession, stream: MediaStream) => {
+			if (current.id !== connectionRef.current) return;
+			streamRef.current = stream;
+			try {
 				const track = stream.getVideoTracks()[0];
 				if (!track)
 					throw new Error("The selected camera did not provide a video track.");
 				const interrupted = () => {
-					if (streamRef.current !== stream) return;
+					if (current.id !== connectionRef.current) return;
 					cancelSound();
 					onInterrupted();
 					store.setState({
@@ -99,66 +141,43 @@ export function useBoothCamera({
 				track.onended = interrupted;
 				track.onmute = interrupted;
 				track.onunmute = () => {
-					if (streamRef.current !== stream || track.readyState !== "live")
+					if (
+						current.id !== connectionRef.current ||
+						track.readyState !== "live"
+					)
 						return;
 					store.setState({ connected: true, message: "" });
 				};
-				if (!videoRef.current) {
-					stream.getTracks().forEach((item) => {
-						item.stop();
-					});
-					return;
-				}
-				videoRef.current.srcObject = stream;
-				await videoRef.current.play();
-				if (connection !== connectionRef.current) {
-					stream.getTracks().forEach((item) => {
-						item.stop();
-					});
-					return;
-				}
-				compositorRef.current?.draw(videoRef.current, settingsRef.current);
-				const info = track.getSettings();
+				const video = videoRef.current;
+				if (!video) throw new Error("Could not start the camera preview.");
+				await video.play();
 				const devices = (
 					await navigator.mediaDevices.enumerateDevices()
 				).filter((item) => item.kind === "videoinput");
+				if (current.id !== connectionRef.current) return;
+				compositorRef.current?.draw(video, settingsRef.current);
+				const info = track.getSettings();
 				store.setState({
 					resolution:
 						info.width && info.height
 							? `${info.width} × ${info.height}`
 							: "Resolution unavailable",
 					devices,
-					deviceId: facing ? selected : (info.deviceId ?? selected),
-					connected: true,
+					deviceId: current.selected.startsWith("facing:")
+						? current.selected
+						: (info.deviceId ?? current.selected),
+					connected: track.readyState === "live" && !track.muted,
+					connecting: false,
 				});
 			} catch (error) {
-				if (connection !== connectionRef.current) return;
-				streamRef.current?.getTracks().forEach((track) => {
-					track.stop();
-				});
-				const name = error instanceof Error ? error.name : "";
-				const explanation =
-					name === "NotAllowedError"
-						? "Allow camera access in your browser settings, then press Connect. Open this page directly in Safari or Chrome rather than an in-app browser."
-						: name === "NotFoundError" || name === "OverconstrainedError"
-							? "That camera is unavailable. Try Default camera or another camera. External Cam Link cameras require support from your phone and browser."
-							: name === "NotReadableError"
-								? "The camera is busy. Close other camera apps or browser tabs, then press Connect."
-								: error instanceof Error
-									? error.message
-									: "Could not connect the camera.";
-				store.setState({ message: `Camera error: ${explanation}` });
-			} finally {
-				connectingRef.current = false;
-				if (connection === connectionRef.current)
-					store.setState({ connecting: false });
+				onError(current.id, error);
 			}
 		},
 		[
 			cancelSound,
 			compositorRef,
+			onError,
 			onInterrupted,
-			prepareSound,
 			settingsRef,
 			store,
 			streamRef,
@@ -166,5 +185,14 @@ export function useBoothCamera({
 		],
 	);
 
-	return { connect };
+	const attachWebcam = useCallback(
+		(webcam: Webcam | null) => {
+			videoRef.current = webcam?.video ?? null;
+		},
+		[videoRef],
+	);
+
+	return { connect, session, attachWebcam, onUserMedia, onError };
 }
+
+export type BoothCamera = ReturnType<typeof useBoothCamera>;

@@ -1,3 +1,5 @@
+import { getFrameOpening } from "@/lib/frame-geometry";
+
 type Settings = {
 	color: string;
 	threshold: number;
@@ -24,18 +26,23 @@ uniform float softness;
 uniform float mirror;
 uniform float greenScreen;
 uniform vec2 cameraScale;
+uniform vec4 cameraRect;
 vec2 chroma(vec3 c) {
   c = c / max(c.r + c.g + c.b, 0.001);
   return vec2(c.b - c.g, c.r - c.g);
 }
 void main() {
-  vec2 cameraUv = (uv - 0.5) * cameraScale + 0.5;
+  vec2 openingUv = (uv - cameraRect.xy) / cameraRect.zw;
+  vec2 cameraUv = (openingUv - 0.5) * cameraScale + 0.5;
   cameraUv.x = mix(cameraUv.x, 1.0 - cameraUv.x, mirror);
   vec3 foreground = texture2D(camera, cameraUv).rgb;
   vec3 backdrop = texture2D(background, uv).rgb;
   float distanceToKey = distance(chroma(foreground), chroma(keyColor));
   float alpha = mix(1.0, smoothstep(threshold, threshold + softness, distanceToKey), greenScreen);
   vec3 video = mix(backdrop, foreground, alpha);
+  if (openingUv.x < 0.0 || openingUv.x > 1.0 || openingUv.y < 0.0 || openingUv.y > 1.0) {
+    video = backdrop;
+  }
   vec4 frame = texture2D(frameImage, uv);
   gl_FragColor = vec4(mix(video, frame.rgb, frame.a), 1.0);
 }`;
@@ -128,9 +135,9 @@ export function createCompositor(canvas: HTMLCanvasElement) {
 	context.uniform1i(context.getUniformLocation(program, "background"), 1);
 	context.uniform1i(context.getUniformLocation(program, "frameImage"), 2);
 	context.pixelStorei(context.UNPACK_FLIP_Y_WEBGL, true);
-	// Output keeps the booth's canvas shape; frame overlays are stretched onto it.
-	const frameWidth = 1153;
-	const frameHeight = 768;
+	let frameWidth = 0;
+	let frameHeight = 0;
+	let openingAspect = 1;
 	context.activeTexture(context.TEXTURE1);
 	context.bindTexture(context.TEXTURE_2D, backgroundTexture);
 	context.texImage2D(
@@ -162,6 +169,23 @@ export function createCompositor(canvas: HTMLCanvasElement) {
 		setFrame(image: HTMLImageElement) {
 			if (!image.naturalWidth || !image.naturalHeight)
 				throw new Error("The photo frame has unexpected dimensions.");
+			const maxTexture: number = context.getParameter(context.MAX_TEXTURE_SIZE);
+			const maxRenderbuffer: number = context.getParameter(
+				context.MAX_RENDERBUFFER_SIZE,
+			);
+			const maxViewport: Int32Array = context.getParameter(
+				context.MAX_VIEWPORT_DIMS,
+			);
+			if (
+				image.naturalWidth >
+					Math.min(maxTexture, maxRenderbuffer, maxViewport[0]) ||
+				image.naturalHeight >
+					Math.min(maxTexture, maxRenderbuffer, maxViewport[1])
+			)
+				throw new Error(
+					"That frame is too large for this device. Choose a smaller design.",
+				);
+			const opening = getFrameOpening(image);
 			context.activeTexture(context.TEXTURE2);
 			context.bindTexture(context.TEXTURE_2D, frameTexture);
 			context.texImage2D(
@@ -172,16 +196,38 @@ export function createCompositor(canvas: HTMLCanvasElement) {
 				context.UNSIGNED_BYTE,
 				image,
 			);
+			if (context.getError() !== context.NO_ERROR)
+				throw new Error("Could not load the photo frame into the preview.");
+			frameWidth = image.naturalWidth;
+			frameHeight = image.naturalHeight;
+			canvas.width = frameWidth;
+			canvas.height = frameHeight;
+			if (
+				context.drawingBufferWidth !== frameWidth ||
+				context.drawingBufferHeight !== frameHeight
+			)
+				throw new Error(
+					"Could not render that frame at its original size. Choose a smaller design.",
+				);
+			openingAspect =
+				(frameWidth * opening.width) / (frameHeight * opening.height);
+			context.uniform4f(
+				context.getUniformLocation(program, "cameraRect"),
+				opening.x,
+				1 - opening.y - opening.height,
+				opening.width,
+				opening.height,
+			);
+			return { width: frameWidth, height: frameHeight };
 		},
 		draw(video: HTMLVideoElement, settings: Settings) {
-			if (!video.videoWidth || !video.videoHeight) return;
-			const outputHeight = Math.round(
-				(video.videoWidth * frameHeight) / frameWidth,
-			);
-			if (canvas.width !== video.videoWidth || canvas.height !== outputHeight) {
-				canvas.width = video.videoWidth;
-				canvas.height = outputHeight;
-			}
+			if (
+				!frameWidth ||
+				!frameHeight ||
+				!video.videoWidth ||
+				!video.videoHeight
+			)
+				return;
 			context.viewport(0, 0, canvas.width, canvas.height);
 			context.activeTexture(context.TEXTURE0);
 			context.bindTexture(context.TEXTURE_2D, videoTexture);
@@ -219,12 +265,11 @@ export function createCompositor(canvas: HTMLCanvasElement) {
 				context.getUniformLocation(program, "greenScreen"),
 				settings.greenScreen ? 1 : 0,
 			);
-			const outputAspect = frameWidth / frameHeight;
 			const cameraAspect = video.videoWidth / video.videoHeight;
 			context.uniform2f(
 				context.getUniformLocation(program, "cameraScale"),
-				Math.min(1, outputAspect / cameraAspect),
-				Math.min(1, cameraAspect / outputAspect),
+				Math.min(1, openingAspect / cameraAspect),
+				Math.min(1, cameraAspect / openingAspect),
 			);
 			context.drawArrays(context.TRIANGLE_STRIP, 0, 4);
 		},

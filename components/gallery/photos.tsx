@@ -23,7 +23,7 @@ export function GalleryPhotos({ gallery }: { gallery: GalleryState }) {
 	} = gallery;
 
 	return (
-		<section className="preview-card p-5" aria-label="Saved photos">
+		<section className="rounded-[18px] border border-[#e6f0f5] bg-white p-5 shadow-[0_10px_35px_#8daec314]" aria-label="Saved photos">
 			<div className="flex flex-wrap items-center justify-between gap-3 mb-5">
 				<div>
 					<p role="status">
@@ -33,7 +33,7 @@ export function GalleryPhotos({ gallery }: { gallery: GalleryState }) {
 						{isRefreshing && " · Refreshing…"}
 					</p>
 					{updatedAt > 0 && (
-						<p className="small">
+						<p className="text-xs leading-[1.5] text-[#8a9faa]">
 							Updated {new Date(updatedAt).toLocaleTimeString()}
 							{isStale && !isFetching && " · may be out of date"}
 						</p>
@@ -46,12 +46,12 @@ export function GalleryPhotos({ gallery }: { gallery: GalleryState }) {
 				</div>
 			</div>
 			{loadError && (
-				<p className="notice" role="alert">
+				<p className="mt-3.5 rounded-[9px] bg-[#fff1ed] p-[11px] text-[13px] text-[#934b43]" role="alert">
 					{loadError.message}
 				</p>
 			)}
 			{staleError && (
-				<p className="notice" role="alert">
+				<p className="mt-3.5 rounded-[9px] bg-[#fff1ed] p-[11px] text-[13px] text-[#934b43]" role="alert">
 					{staleError.message} Showing previously loaded photos.
 				</p>
 			)}
@@ -85,10 +85,10 @@ export function GalleryPhotos({ gallery }: { gallery: GalleryState }) {
 								onError={() => markImageFailed(photo.url)}
 							/>
 						</a>
-						<figcaption className="p-3 text-sm">
+						<figcaption className="p-3 text-sm text-[#6b8c9d]">
 							{new Date(photo.createdAt).toLocaleString()}
 							{failedUrls.has(photo.url) && (
-								<p role="alert">
+								<p className="text-[#934b43]" role="alert">
 									Image unavailable or link expired. Refresh photos to retry.
 								</p>
 							)}
@@ -104,7 +104,7 @@ export function GalleryPhotos({ gallery }: { gallery: GalleryState }) {
 					</Button>
 				)}
 			</div>
-			<p className="small mt-4">
+			<p className="mt-4 text-xs leading-[1.5] text-[#8a9faa]">
 				Click a photo to open the full image. Private image links expire after
 				15 minutes; they renew automatically while this page is open, or refresh
 				to renew them now. Signing out does not revoke image links already

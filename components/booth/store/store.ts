@@ -1,8 +1,10 @@
-import { createStore, type StoreApi } from "zustand/vanilla";
+import { createJSONStorage, persist } from "zustand/middleware";
+import { createStore } from "zustand/vanilla";
 
 export type { Backdrop } from "@/lib/backdrops";
 
 import type { Backdrop } from "@/lib/backdrops";
+import type { FrameSize } from "@/lib/frame-geometry";
 export type Photo = { url: string; blob: Blob };
 export type Settings = {
 	color: string;
@@ -23,12 +25,15 @@ export const initialSettings: Settings = {
 export type BoothState = {
 	settings: Settings;
 	settingsOpen: boolean;
+	settingsVisible: boolean;
 	devices: MediaDeviceInfo[];
 	deviceId: string;
 	background: string;
 	backgroundChosen: boolean;
 	keyDetected: boolean | null;
 	frameReady: boolean;
+	frameSize: FrameSize | null;
+	frameError: string;
 	connected: boolean;
 	connecting: boolean;
 	resolution: string;
@@ -37,23 +42,64 @@ export type BoothState = {
 	photo: Photo | null;
 };
 
-export type BoothStore = StoreApi<BoothState>;
+type PersistedBoothState = Pick<
+	BoothState,
+	| "settings"
+	| "settingsVisible"
+	| "deviceId"
+	| "background"
+	| "backgroundChosen"
+>;
 
-export function createBoothStore(backgrounds: Backdrop[]): BoothStore {
-	return createStore<BoothState>(() => ({
-		settings: initialSettings,
-		settingsOpen: false,
-		devices: [],
-		deviceId: "",
-		background: backgrounds[0]?.url ?? "",
-		backgroundChosen: false,
-		keyDetected: null,
-		frameReady: false,
-		connected: false,
-		connecting: false,
-		resolution: "",
-		message: "",
-		countdown: null,
-		photo: null,
-	}));
+export type BoothStore = ReturnType<typeof createBoothStore>;
+
+export function createBoothStore(backgrounds: Backdrop[]) {
+	return createStore<BoothState>()(
+		persist<BoothState, [], [], PersistedBoothState>(
+			() => ({
+				settings: initialSettings,
+				settingsOpen: false,
+				settingsVisible: true,
+				devices: [],
+				deviceId: "",
+				background: backgrounds[0]?.url ?? "",
+				backgroundChosen: false,
+				keyDetected: null,
+				frameReady: false,
+				frameSize: null,
+				frameError: "",
+				connected: false,
+				connecting: false,
+				resolution: "",
+				message: "",
+				countdown: null,
+				photo: null,
+			}),
+			{
+				name: "photo-booth-preferences",
+				storage: createJSONStorage(() => localStorage),
+				partialize: (state) => ({
+					settings: state.settings,
+					settingsVisible: state.settingsVisible,
+					deviceId: state.deviceId,
+					background: state.background,
+					backgroundChosen: state.backgroundChosen,
+				}),
+				merge: (persistedState, currentState) => {
+					const persisted = persistedState as
+						| Partial<PersistedBoothState>
+						| undefined;
+					return {
+						...currentState,
+						...persisted,
+						settings: {
+							...currentState.settings,
+							...persisted?.settings,
+						},
+					};
+				},
+				skipHydration: true,
+			},
+		),
+	);
 }

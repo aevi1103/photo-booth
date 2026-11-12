@@ -17,21 +17,21 @@ export function BackdropManager() {
 	const update = useUpdateBackdrop();
 	const form = useRef<HTMLFormElement>(null);
 	return (
-		<main className="booth-shell">
-			<header className="topbar">
-				<Link href="/" className="brand">
+		<main className="mx-auto w-full max-w-[1440px] px-[6%]">
+			<header className="topbar sticky top-0 z-30 flex h-[82px] items-center justify-between border-b border-[#e1edf4] bg-[linear-gradient(90deg,#f5faff00,#f5faffeb_18%,#f5faffeb_82%,#f5faff00)] backdrop-blur-[12px] [@media(max-width:480px)]:h-auto [@media(max-width:480px)]:min-h-[82px] [@media(max-width:480px)]:flex-wrap [@media(max-width:480px)]:gap-3 [@media(max-width:480px)]:py-3.5">
+				<Link href="/" className="flex items-center gap-2 text-[22px] font-bold text-[#558eae] no-underline [@media(max-width:480px)]:text-[19px]">
 					little cloud
 				</Link>
-				<div className="account-navigation">
+				<div className="flex items-center gap-2">
 					<Link href="/" className={buttonVariants({ variant: "outline" })}>
 						Back to booth
 					</Link>
 					<SignOut />
 				</div>
 			</header>
-			<section className="hero">
-				<h1>Manage backdrops</h1>
-				<p>
+			<section className="px-3 pt-[50px] pb-[35px] text-center [@media(max-width:800px)]:pt-8">
+				<h1 className="mt-3.5 mb-[9px] font-[Georgia,serif] text-[clamp(32px,4vw,48px)] font-normal text-[#345d76]">Manage backdrops</h1>
+				<p className="text-[14px] text-[#89a1af]">
 					Upload frame designs for everyone to use in the photo booth. The
 					camera video shows through the transparent parts of the image, so use
 					a PNG or WebP with a transparent window (around 1153 × 768 pixels
@@ -39,9 +39,9 @@ export function BackdropManager() {
 					converted during upload so the window becomes truly transparent.
 				</p>
 			</section>
-			<div className="admin-content">
+			<div className="mx-auto max-w-[1100px]">
 				<form
-					className="admin-panel backdrop-upload"
+					className="mb-[18px] grid gap-3.5 rounded-[18px] border border-[#e6f0f5] bg-white p-6 shadow-[0_10px_35px_#8daec314]"
 					ref={form}
 					onSubmit={(event) => {
 						event.preventDefault();
@@ -54,10 +54,11 @@ export function BackdropManager() {
 						);
 					}}
 				>
-					<h2>Upload a backdrop</h2>
+					<h2 className="text-[16px] font-bold text-[#365e74]">Upload a backdrop</h2>
 					<label htmlFor="backdrop-name">Backdrop name</label>
 					<input
 						id="backdrop-name"
+						className="w-full rounded-lg border border-[#dcebf2] bg-[#fbfdff] p-2.5 text-[13px] text-[#416a80]"
 						name="name"
 						required
 						maxLength={80}
@@ -78,15 +79,15 @@ export function BackdropManager() {
 						{upload.isPending ? "Uploading..." : "Upload backdrop"}
 					</Button>
 					{upload.isError && (
-						<p className="notice" role="alert">
+						<p className="mt-3.5 rounded-[9px] bg-[#fff1ed] p-[11px] text-[13px] text-[#934b43]" role="alert">
 							{upload.error.message}
 						</p>
 					)}
 					{upload.isSuccess && <p role="status">Backdrop uploaded.</p>}
 				</form>
-				<section className="admin-panel">
-					<h2>Uploaded backdrops</h2>
-					<p className="small">
+				<section className="mb-[18px] rounded-[18px] border border-[#e6f0f5] bg-white p-6 shadow-[0_10px_35px_#8daec314]">
+					<h2 className="text-[16px] font-bold text-[#365e74]">Uploaded backdrops</h2>
+					<p className="text-[14px] leading-[1.5] text-[#89a1af]">
 						Hidden backdrops stay out of the booth carousel. The booth default
 						is pre-selected for guests; without one, the first built-in design
 						is used.
@@ -94,7 +95,7 @@ export function BackdropManager() {
 					{backdrops.isPending && <p role="status">Loading backdrops...</p>}
 					{backdrops.isError && (
 						<>
-							<p className="notice" role="alert">
+							<p className="mt-3.5 rounded-[9px] bg-[#fff1ed] p-[11px] text-[13px] text-[#934b43]" role="alert">
 								{backdrops.error.message}
 							</p>
 							<Button
@@ -111,26 +112,27 @@ export function BackdropManager() {
 						</p>
 					)}
 					{update.isError && (
-						<p className="notice" role="alert">
+						<p className="mt-3.5 rounded-[9px] bg-[#fff1ed] p-[11px] text-[13px] text-[#934b43]" role="alert">
 							{update.error.message}
 						</p>
 					)}
-					<div className="backdrop-gallery">
+					<div className="mt-4 grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-4">
 						{backdrops.data?.map((item) => (
 							<figure key={item.file}>
 								<Image
+									className="aspect-video w-full rounded-lg object-cover"
 									src={item.url}
 									alt={item.name}
 									width={320}
 									height={180}
 									unoptimized
 								/>
-								<figcaption>
+								<figcaption className="my-1.5 text-[13px]">
 									{item.name}
 									{item.isDefault && <strong> · Booth default</strong>}
 									{item.hidden && <em> · Hidden</em>}
 								</figcaption>
-								<div className="backdrop-actions">
+								<div className="flex flex-wrap gap-2">
 									<Button
 										variant="outline"
 										disabled={update.isPending}

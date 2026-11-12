@@ -2,7 +2,7 @@
 
 A Next.js photo booth for a baby shower. It places the live camera preview inside a decorative frame and saves the reviewed image, including the frame, as a private JPEG in Supabase Storage. An optional green-screen effect can replace the background with an image bundled with the app.
 
-> **Camera note:** The booth captures a frame from the browser's video stream. It does not trigger a camera's still-photo shutter or capture a full-resolution camera still. The camera feed is center-cropped to fit the frame opening.
+> **Camera note:** The booth uses react-webcam for the browser's video stream. It does not trigger a camera's still-photo shutter or capture a full-resolution camera still. The camera feed is center-cropped to fill the frame's transparent photo opening without stretching. The composited preview, including the artwork and effects, is exported as the JPEG rather than a raw webcam screenshot.
 
 ## Set up and run locally
 
@@ -59,9 +59,11 @@ To install the booth, use your browser's install or add-to-home-screen option. O
 
 Choose **Take a photo** or enable voice capture and say **“capture”**. The booth counts down for three seconds, shows a review, and uploads the framed JPEG automatically. Wait for the save confirmation; the shutter sound means the image was captured, not necessarily uploaded.
 
-If saving fails, choose **Retry saving** or **Download photo**. Saving disables **Retake** until the upload finishes. Use **View gallery** to see saved photos.
+If saving fails, choose **Retry saving** or **Download photo**. Saving disables **Retake** until the upload finishes. Open **Menu → View gallery** to see saved photos.
 
 ## Using the booth
+
+The booth uses the full page width without a header, welcome banner, or upload-status subtitle. The **Menu** button lives in the settings section and opens the gallery, **Sign out**, or **Manage backdrops** (admins only). Camera settings stay beside the preview on desktop and under **Show settings** on mobile. The preview title and camera status sit directly above, and align with, the photo frame. On large screens, the preview, frame picker, and capture controls fit the viewport height while preserving the frame's aspect ratio; smaller screens stack and scroll naturally. Upload-limit warnings and recovery actions remain visible when needed.
 
 ### Voice capture and sounds
 
@@ -75,7 +77,11 @@ If voice recognition reports a network error, it could not reach the browser's s
 
 ### Backdrops
 
-Backdrops are frame overlays: the camera video fills the output and shows through the transparent parts of the selected image. Admins can open **Manage backdrops** from the booth (`/admin/backdrops`) and upload PNG or WebP designs with a transparent window (JPEG is accepted but has no transparency, so it covers the video entirely) up to 4 MiB; around 1153 × 768 pixels works best because designs are stretched to the booth's 3:2 output. Run the updated [`supabase/setup.sql`](supabase/setup.sql) first to create the private `backdrops` bucket and the backdrop curation settings. Uploads do not consume photo allowances. Only admins can access the management page, upload API, or curation API; all signed-in guests can use visible uploaded backdrops.
+Backdrops are frame overlays. Portrait, landscape, and square designs retain their original aspect ratio in the preview, and saved JPEGs use the frame image's original pixel dimensions. Photo mode shows the entire frame with empty space where necessary, rather than stretching or cropping the artwork.
+
+Use one main transparent photo opening per design. The booth detects its bounds and center-crops the camera to fill that opening; the original transparency preserves irregular edges and decorations over the photo. Small decorative holes and transparent outer borders do not determine the main opening. A fully transparent image uses the whole image for the camera; an opaque image covers it entirely. Very large frames may exceed a device's graphics limits or the existing JPEG upload-size limit; native-size output does not add detail to the camera video.
+
+Admins can open **Manage backdrops** from the booth (`/admin/backdrops`) and upload PNG or WebP designs with a transparent window (JPEG is accepted but has no transparency, so it covers the video entirely) up to 4 MiB. Run the updated [`supabase/setup.sql`](supabase/setup.sql) first to create the private `backdrops` bucket and the backdrop curation settings. Uploads do not consume photo allowances. Only admins can access the management page, upload API, or curation API; all signed-in guests can use visible uploaded backdrops.
 
 Uploaded backdrops appear alongside the bundled frame designs from [`public/frames`](public/frames) in the carousel. On the management page, admins can hide individual uploaded backdrops from the booth and mark one as the **booth default**, which guests start from until they pick another; without a default, the first bundled design is used. A horizontally scrollable carousel appears directly below the video only when more than one design is available. No green screen is needed to use backdrops. Separately, **Replace green screen** can be enabled in the settings to key out green areas of the camera; the booth shows a hint when that is on but the camera cannot see the key color.
 
