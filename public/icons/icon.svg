@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <title>Little Cloud Photo Booth</title>
+  <rect width="512" height="512" fill="#f5faff"/>
+  <path d="M143 329h225c45 0 79-32 79-73s-31-72-71-74c-12-52-57-88-111-88-60 0-108 43-113 101-39 1-69 30-69 67 0 38 27 67 60 67Z" fill="#568eae"/>
+  <rect x="177" y="221" width="158" height="107" rx="20" fill="#f5faff"/>
+  <path d="M207 221l12-20h65l12 20" fill="#f5faff"/>
+  <circle cx="256" cy="274" r="32" fill="#568eae"/>
+  <circle cx="256" cy="274" r="19" fill="#f5faff"/>
+</svg>

@@ -53,6 +53,8 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000), choose **Continue with Google**, and sign in. Allow camera access, choose a camera, then press **Connect**. If using a Cam Link, choose it from the camera list and press **Connect** again.
 
+To install the booth, use your browser's install or add-to-home-screen option. On iPhone or iPad, use Safari's **Share → Add to Home Screen**. Installation requires HTTPS (or localhost); the installed app still needs an internet connection and Google sign-in. Offline access and push notifications are not supported.
+
 ### 5. Take and save a photo
 
 Choose **Take a photo** or enable voice capture and say **“capture”**. The booth counts down for three seconds, shows a review, and uploads the framed JPEG automatically. Wait for the save confirmation; the shutter sound means the image was captured, not necessarily uploaded.
