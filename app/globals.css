@@ -133,49 +133,29 @@
   isolation: isolate;
 }
 
-.booth-shell::before,
-.booth-shell::after {
+.booth-shell::before {
   content: "";
   position: fixed;
-  pointer-events: none;
-}
-
-.booth-shell::before {
   inset: 0;
   z-index: -2;
+  pointer-events: none;
   background: linear-gradient(145deg, #f2faff, #fff8f8 55%, #f6f7ff);
 }
 
-.booth-shell::after {
-  inset: -10%;
+.booth-snow {
+  position: fixed;
+  inset: 0;
   z-index: -1;
-  background:
-    radial-gradient(ellipse 110px 35px at 15% 23%, #fff 98%, transparent),
-    radial-gradient(ellipse 55px 45px at 13% 21%, #fff 98%, transparent),
-    radial-gradient(ellipse 65px 50px at 18% 21%, #fff 98%, transparent),
-    radial-gradient(ellipse 100px 32px at 82% 68%, #fff 98%, transparent),
-    radial-gradient(ellipse 50px 40px at 80% 66%, #fff 98%, transparent),
-    radial-gradient(ellipse 60px 48px at 85% 66%, #fff 98%, transparent),
-    radial-gradient(circle 5px at 28% 75%, #f8d7e3 98%, transparent),
-    radial-gradient(circle 4px at 69% 18%, #d7e8f8 98%, transparent),
-    radial-gradient(circle 6px at 92% 38%, #f9e6c6 98%, transparent),
-    radial-gradient(circle 4px at 45% 45%, #e8def5 98%, transparent);
-  opacity: 0.8;
-  animation: booth-cloud-drift 18s ease-in-out infinite alternate;
+  pointer-events: none;
 }
 
 .booth-shell:has(.booth-preview.is-photo-mode)::before,
-.booth-shell:has(.booth-preview.is-photo-mode)::after {
+.booth-shell:has(.booth-preview.is-photo-mode) .booth-snow {
   display: none;
 }
 
-@keyframes booth-cloud-drift {
-  from { transform: translate3d(-1.5%, 0, 0); }
-  to { transform: translate3d(1.5%, -1%, 0); }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .booth-shell::after {
-    animation: none;
+  .booth-snow {
+    display: none;
   }
 }

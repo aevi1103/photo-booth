@@ -3,6 +3,7 @@
 import { Menu, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import PixelSnow from "@/components/PixelSnow";
 import { useBoothController } from "@/components/booth/hooks/use-booth-controller";
 import { BoothPreview } from "@/components/booth/preview";
 import type { Backdrop } from "@/components/booth/store/store";
@@ -108,7 +109,7 @@ export function Booth({ backgrounds: defaults }: { backgrounds: Backdrop[] }) {
 					</nav>
 				</DrawerContent>
 				<div
-					className="quota-status mx-auto max-w-[720px] text-center text-xs text-[#568eae] [&_button]:mt-2 [&_p+p]:mt-2"
+					className="quota-status mx-auto max-w-180 text-center text-xs text-[#568eae] [&_button]:mt-2 [&_p+p]:mt-2"
 					aria-live="polite"
 				>
 					{quota.data ? (
@@ -119,7 +120,7 @@ export function Booth({ backgrounds: defaults }: { backgrounds: Backdrop[] }) {
 							{quota.isRefetchError && " (last known)"}
 							{quota.isFetching && (
 								<span
-									className="text-xs leading-[1.5] text-[#8a9faa]"
+									className="text-xs leading-normal text-[#8a9faa]"
 									aria-hidden="true"
 								>
 									{" "}
@@ -141,7 +142,7 @@ export function Booth({ backgrounds: defaults }: { backgrounds: Backdrop[] }) {
 					{quota.isError && (
 						<>
 							<p
-								className="mt-3.5 rounded-[9px] bg-[#fff1ed] p-[11px] text-[13px] text-[#934b43]"
+								className="mt-3.5 rounded-[9px] bg-[#fff1ed] p-2.75 text-[13px] text-[#934b43]"
 								role="alert"
 							>
 								{quota.error.message}
@@ -156,7 +157,16 @@ export function Booth({ backgrounds: defaults }: { backgrounds: Backdrop[] }) {
 						</>
 					)}
 				</div>
-				<div className="booth-grid mx-auto grid max-w-none grid-cols-1 items-start gap-5 min-[801px]:gap-4 [@media(min-width:801px)_and_(min-height:600px)]:h-[calc(100dvh-24px)] [.capture-shell:has(.booth-preview.is-photo-mode)_&]:absolute [.capture-shell:has(.booth-preview.is-photo-mode)_&]:inset-0 [.capture-shell:has(.booth-preview.is-photo-mode)_&]:m-0 [.capture-shell:has(.booth-preview.is-photo-mode)_&]:block [.capture-shell:has(.booth-preview.is-photo-mode)_&]:h-full [.capture-shell:has(.booth-preview.is-photo-mode)_&]:w-full">
+				<div
+					className="booth-grid mx-auto grid max-w-none grid-cols-1 items-start gap-5
+				 min-[801px]:gap-4 [@media(min-width:801px)_and_(min-height:600px)]:h-[calc(100dvh-24px)]
+				  [.capture-shell:has(.booth-preview.is-photo-mode)_&]:absolute
+					 [.capture-shell:has(.booth-preview.is-photo-mode)_&]:inset-0 
+					 [.capture-shell:has(.booth-preview.is-photo-mode)_&]:m-0
+					  [.capture-shell:has(.booth-preview.is-photo-mode)_&]:block
+						 [.capture-shell:has(.booth-preview.is-photo-mode)_&]:h-full
+						  [.capture-shell:has(.booth-preview.is-photo-mode)_&]:w-full"
+				>
 					<BoothPreview
 						store={store}
 						backgrounds={backgrounds}
@@ -180,6 +190,16 @@ export function Booth({ backgrounds: defaults }: { backgrounds: Backdrop[] }) {
 								<Menu /> Menu
 							</DrawerTrigger>
 						}
+					/>
+				</div>
+				<div className="booth-snow" aria-hidden="true">
+					<PixelSnow
+						color="#80b7d1"
+						speed={0.5}
+						density={0.55}
+						lightMode
+						mouseInteraction={false}
+						dpr={0.75}
 					/>
 				</div>
 			</main>

@@ -58,7 +58,9 @@ async function compositionMatches(
 ) {
 	return page.evaluate(
 		async ({ opening, mirror, captured }) => {
-			const source = document.querySelector("canvas");
+			const source = document.querySelector<HTMLCanvasElement>(
+				'[aria-label="Live photo booth preview"]',
+			);
 			const video = document.querySelector("video");
 			if (!source || !video || !video.videoWidth) return false;
 			const expected = document.createElement("canvas");
@@ -208,21 +210,62 @@ test.beforeEach(async ({ page }) => {
 test("booth background moves gently and respects reduced motion", async ({
 	page,
 }) => {
-	await page.goto("/");
-	const background = () =>
-		page.locator(".booth-shell").evaluate((shell) => {
-			const style = getComputedStyle(shell, "::after");
-			return {
-				animation: style.animationName,
-				pointerEvents: style.pointerEvents,
-			};
-		});
-	expect(await background()).toEqual({
-		animation: "booth-cloud-drift",
-		pointerEvents: "none",
+	await page.addInitScript(() => {
+		const draw = WebGL2RenderingContext.prototype.drawArrays;
+		WebGL2RenderingContext.prototype.drawArrays = function (...args) {
+			const result = draw.apply(this, args);
+			if (
+				this.canvas instanceof HTMLCanvasElement &&
+				this.canvas.closest(".booth-snow") &&
+				this.getParameter(this.FRAMEBUFFER_BINDING) === null
+			) {
+				const frames = Number(this.canvas.dataset.frames ?? 0) + 1;
+				this.canvas.dataset.frames = String(frames);
+				if (frames >= 20 && !this.canvas.dataset.visibleSnow) {
+					const pixels = new Uint8Array(
+						this.canvas.width * this.canvas.height * 4,
+					);
+					this.readPixels(
+						0,
+						0,
+						this.canvas.width,
+						this.canvas.height,
+						this.RGBA,
+						this.UNSIGNED_BYTE,
+						pixels,
+					);
+					if (pixels.some((value, index) => index % 4 === 3 && value > 0)) {
+						this.canvas.dataset.visibleSnow = "true";
+					}
+				}
+			}
+			return result;
+		};
 	});
+	await page.goto("/");
+	const background = page.locator(".booth-snow");
+	await expect(background).toBeVisible();
+	await expect(background).toHaveCSS("pointer-events", "none");
+	await expect
+		.poll(async () =>
+			Number(await background.locator("canvas").getAttribute("data-frames")),
+		)
+		.toBeGreaterThan(3);
+	await expect(background.locator("canvas")).toHaveAttribute(
+		"data-visible-snow",
+		"true",
+	);
 	await page.emulateMedia({ reducedMotion: "reduce" });
-	expect((await background()).animation).toBe("none");
+	await expect(background).toBeHidden();
+	await page.reload();
+	await expect(background).toBeHidden();
+	await page.emulateMedia({ reducedMotion: "no-preference" });
+	await expect(background).toBeVisible();
+	await expect
+		.poll(async () =>
+			Number(await background.locator("canvas").getAttribute("data-frames")),
+		)
+		.toBeGreaterThan(3);
 });
 
 for (const viewport of [
@@ -326,7 +369,7 @@ for (const viewport of [
 		await expect
 			.poll(() =>
 				page
-					.locator("canvas")
+					.getByLabel("Live photo booth preview")
 					.evaluate((canvas: HTMLCanvasElement) => canvas.width),
 			)
 			.toBe(1153);
@@ -397,7 +440,7 @@ for (const [width, height] of [
 		await expect
 			.poll(() =>
 				page
-					.locator("canvas")
+					.getByLabel("Live photo booth preview")
 					.evaluate((canvas: HTMLCanvasElement) => [
 						canvas.width,
 						canvas.height,
@@ -436,7 +479,7 @@ test("frame orientation switches without reconnecting and portrait photo mode co
 	await expect
 		.poll(() =>
 			page
-				.locator("canvas")
+				.getByLabel("Live photo booth preview")
 				.evaluate((canvas: HTMLCanvasElement) => [canvas.width, canvas.height]),
 		)
 		.toEqual([320, 480]);
@@ -462,7 +505,7 @@ test("frame orientation switches without reconnecting and portrait photo mode co
 	await expect
 		.poll(() =>
 			page
-				.locator("canvas")
+				.getByLabel("Live photo booth preview")
 				.evaluate((canvas: HTMLCanvasElement) => [canvas.width, canvas.height]),
 		)
 		.toEqual([320, 480]);
@@ -484,7 +527,7 @@ for (const kind of ["opaque", "transparent"] as const) {
 		await expect.poll(() => compositionMatches(page, opening)).toBe(true);
 		expect(
 			await page
-				.locator("canvas")
+				.getByLabel("Live photo booth preview")
 				.evaluate((canvas: HTMLCanvasElement) => [canvas.width, canvas.height]),
 		).toEqual([320, 480]);
 	});
@@ -602,7 +645,7 @@ test("a late frame load cannot replace a newer selection", async ({ page }) => {
 	);
 	expect(
 		await page
-			.locator("canvas")
+			.getByLabel("Live photo booth preview")
 			.evaluate((canvas: HTMLCanvasElement) => [canvas.width, canvas.height]),
 	).toEqual([1153, 768]);
 	await page
@@ -911,11 +954,7 @@ for (const viewport of [
 		await expect(page.getByText("LIVE", { exact: true })).toBeVisible();
 
 		await page.getByRole("button", { name: "Photo mode" }).click();
-		expect(
-			await page
-				.locator(".booth-shell")
-				.evaluate((shell) => getComputedStyle(shell, "::after").display),
-		).toBe("none");
+		await expect(page.locator(".booth-snow")).toBeHidden();
 		await expect(page.locator(".preview-card")).toHaveCSS(
 			"position",
 			"absolute",
@@ -1080,41 +1119,43 @@ test("frame and camera appear in preview and are automatically uploaded without 
 	await expect(capture).toBeEnabled();
 	await expect
 		.poll(() =>
-			page.locator("canvas").evaluate((source: HTMLCanvasElement) => {
-				const canvas = document.createElement("canvas");
-				canvas.width = source.width;
-				canvas.height = source.height;
-				const ctx = canvas.getContext("2d")!;
-				ctx.drawImage(source, 0, 0);
-				const cameraLeft = ctx.getImageData(
-					Math.round(source.width * 0.35),
-					Math.round(source.height * 0.5),
-					1,
-					1,
-				).data;
-				const cameraRight = ctx.getImageData(
-					Math.round(source.width * 0.65),
-					Math.round(source.height * 0.5),
-					1,
-					1,
-				).data;
-				const border = ctx.getImageData(5, 5, 1, 1).data;
-				const openingBehindText = ctx.getImageData(
-					Math.round((source.width * 710) / 1153),
-					Math.round((source.height * 145) / 768),
-					1,
-					1,
-				).data;
-				return (
-					cameraLeft[1] > 200 &&
-					cameraLeft[0] < 30 &&
-					cameraRight[0] > 200 &&
-					cameraRight[1] < 30 &&
-					openingBehindText[0] > 200 &&
-					openingBehindText[1] < 30 &&
-					!(border[1] > 200 && border[0] < 30)
-				);
-			}),
+			page
+				.getByLabel("Live photo booth preview")
+				.evaluate((source: HTMLCanvasElement) => {
+					const canvas = document.createElement("canvas");
+					canvas.width = source.width;
+					canvas.height = source.height;
+					const ctx = canvas.getContext("2d")!;
+					ctx.drawImage(source, 0, 0);
+					const cameraLeft = ctx.getImageData(
+						Math.round(source.width * 0.35),
+						Math.round(source.height * 0.5),
+						1,
+						1,
+					).data;
+					const cameraRight = ctx.getImageData(
+						Math.round(source.width * 0.65),
+						Math.round(source.height * 0.5),
+						1,
+						1,
+					).data;
+					const border = ctx.getImageData(5, 5, 1, 1).data;
+					const openingBehindText = ctx.getImageData(
+						Math.round((source.width * 710) / 1153),
+						Math.round((source.height * 145) / 768),
+						1,
+						1,
+					).data;
+					return (
+						cameraLeft[1] > 200 &&
+						cameraLeft[0] < 30 &&
+						cameraRight[0] > 200 &&
+						cameraRight[1] < 30 &&
+						openingBehindText[0] > 200 &&
+						openingBehindText[1] < 30 &&
+						!(border[1] > 200 && border[0] < 30)
+					);
+				}),
 		)
 		.toBe(true);
 	await capture.click();
@@ -1257,7 +1298,7 @@ test("oversized captures offer download without sending a request to Vercel", as
 		return route.fulfill({ json: { saved: true } });
 	});
 	await page.addInitScript(() => {
-		HTMLCanvasElement.prototype.toBlob = function (callback) {
+		HTMLCanvasElement.prototype.toBlob = (callback) => {
 			callback(
 				new Blob([new Uint8Array(4 * 1024 * 1024 + 1)], { type: "image/jpeg" }),
 			);
@@ -1378,21 +1419,23 @@ test("the camera shows through the frame window and green keying stays optional"
 		page.getByRole("button", { name: "Take a photo" }),
 	).toBeEnabled();
 	const sample = () =>
-		page.locator("canvas").evaluate((source: HTMLCanvasElement) => {
-			const canvas = document.createElement("canvas");
-			canvas.width = source.width;
-			canvas.height = source.height;
-			const context = canvas.getContext("2d")!;
-			context.drawImage(source, 0, 0);
-			return Array.from(
-				context.getImageData(
-					Math.round(source.width * 0.35),
-					Math.round(source.height * 0.5),
-					1,
-					1,
-				).data,
-			);
-		});
+		page
+			.getByLabel("Live photo booth preview")
+			.evaluate((source: HTMLCanvasElement) => {
+				const canvas = document.createElement("canvas");
+				canvas.width = source.width;
+				canvas.height = source.height;
+				const context = canvas.getContext("2d")!;
+				context.drawImage(source, 0, 0);
+				return Array.from(
+					context.getImageData(
+						Math.round(source.width * 0.35),
+						Math.round(source.height * 0.5),
+						1,
+						1,
+					).data,
+				);
+			});
 	// Without green keying the camera is visible through the frame's transparent window.
 	await expect
 		.poll(async () => {
@@ -1546,15 +1589,17 @@ test("admin uploads backdrops and guests select the carousel below the video", a
 	).toBeEnabled();
 	await expect
 		.poll(() =>
-			page.locator("canvas").evaluate((source: HTMLCanvasElement) => {
-				const canvas = document.createElement("canvas");
-				canvas.width = source.width;
-				canvas.height = source.height;
-				const context = canvas.getContext("2d")!;
-				context.drawImage(source, 0, 0);
-				const pixel = context.getImageData(80, 90, 1, 1).data;
-				return pixel[2] > 200 && pixel[1] < 30;
-			}),
+			page
+				.getByLabel("Live photo booth preview")
+				.evaluate((source: HTMLCanvasElement) => {
+					const canvas = document.createElement("canvas");
+					canvas.width = source.width;
+					canvas.height = source.height;
+					const context = canvas.getContext("2d")!;
+					context.drawImage(source, 0, 0);
+					const pixel = context.getImageData(80, 90, 1, 1).data;
+					return pixel[2] > 200 && pixel[1] < 30;
+				}),
 		)
 		.toBe(true);
 	const preview = await page.locator(".preview").boundingBox();

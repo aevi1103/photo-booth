@@ -185,7 +185,12 @@ export function BoothPreview({
 							</div>
 						</div>
 						<div
-							className={`preview overflow-hidden ${isPhotoMode ? "absolute inset-0 h-full w-full !aspect-auto rounded-none bg-black" : "relative aspect-video rounded-xl bg-[#e9f4f9]"}`}
+							className={`preview overflow-hidden shadow-[0_14px_40px_-14px_rgba(99,165,200,0.62),0_8px_24px_-12px_rgba(228,156,182,0.48)]
+								 ${
+										isPhotoMode
+											? "absolute inset-0 h-full w-full aspect-auto! rounded-none bg-black"
+											: "relative aspect-video rounded-xl bg-[#e9f4f9]"
+									}`}
 							style={{
 								aspectRatio: frameSize
 									? `${frameSize.width} / ${frameSize.height}`
