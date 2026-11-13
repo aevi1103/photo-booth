@@ -11,7 +11,12 @@ import { isPhotoQuota, type PhotoQuota } from "@/lib/photo-quota";
 import { accountKeys, reserveOne } from "@/lib/queries/account";
 import { ApiError, isRecord, requestJson } from "@/lib/queries/http";
 
-export type GalleryPhoto = { name: string; createdAt: string; url: string };
+export type GalleryPhoto = {
+	name: string;
+	createdAt: string;
+	url: string;
+	shareUrl?: string;
+};
 export type PhotoPage = { photos: GalleryPhoto[]; nextOffset: number | null };
 
 const PHOTO_LIST_ERROR = "Could not load photos. Please retry.";
@@ -30,7 +35,8 @@ function isGalleryPhoto(value: unknown): value is GalleryPhoto {
 		isRecord(value) &&
 		typeof value.name === "string" &&
 		typeof value.createdAt === "string" &&
-		typeof value.url === "string"
+		typeof value.url === "string" &&
+		(value.shareUrl === undefined || typeof value.shareUrl === "string")
 	);
 }
 

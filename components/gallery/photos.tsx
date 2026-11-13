@@ -31,6 +31,7 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { ShareButton } from "@/features/share/ShareButton";
 import { useQuota } from "@/lib/queries/account";
 import { useDeletePhoto } from "@/lib/queries/photos";
 import { cn } from "@/lib/utils";
@@ -49,6 +50,7 @@ export function GalleryPhotos({
 	const [viewedName, setViewedName] = useState<string | null>(null);
 	const [carousel, setCarousel] = useState<CarouselApi>();
 	const scrollRef = useRef<HTMLDivElement>(null);
+	const previewRef = useRef<HTMLImageElement>(null);
 	const newestName = gallery.photos[0]?.name;
 	const previousNewest = useRef(newestName);
 	useEffect(() => {
@@ -421,7 +423,13 @@ export function GalleryPhotos({
 						)}
 					</div>
 				</div>
-				<DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-4xl">
+				<DialogContent
+					className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-4xl"
+					overlayProps={{
+						className: "bg-black/40 supports-backdrop-filter:backdrop-blur-md",
+						forceRender: true,
+					}}
+				>
 					<DialogHeader>
 						<DialogTitle>Photo memory</DialogTitle>
 						<DialogDescription>
@@ -430,7 +438,40 @@ export function GalleryPhotos({
 					</DialogHeader>
 					{viewedPhoto && (
 						<>
+							<div className="flex flex-wrap items-center gap-3">
+								{viewedPhoto.shareUrl && (
+									<ShareButton
+										imageUrl={`${viewedPhoto.shareUrl}/image`}
+										pageUrl={viewedPhoto.shareUrl}
+										title="Nugget Photo Booth memory"
+									/>
+								)}
+								<Button
+									variant="outline"
+									size="sm"
+									disabled={failedUrls.has(viewedPhoto.url)}
+									onClick={() => {
+										setPrintError("");
+										const content = previewRef.current;
+										if (!content) {
+											setPrintError("Could not print photo. Please try again.");
+											return;
+										}
+										printPhoto(() => content);
+									}}
+								>
+									<Printer data-icon="inline-start" />
+									Print
+								</Button>
+								{viewedPhoto.shareUrl && (
+									<p className="text-sm text-muted-foreground">
+										Shared links let anyone view this photo for seven days.
+									</p>
+								)}
+							</div>
+							{printError && <p role="alert">{printError}</p>}
 							<Image
+								ref={previewRef}
 								src={viewedPhoto.url}
 								alt="Full-size baby-shower memory"
 								width={1536}

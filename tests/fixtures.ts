@@ -115,6 +115,15 @@ export const test = base.extend<{ backend: Backend }, { supabase: Backend }>({
             response.end(JSON.stringify({ statusCode: String(backend.storageError), message: "Test upload failure", error: "UploadFailed" })); return;
           }
           const path = decodeURIComponent(url.pathname.slice("/storage/v1/object/photos/".length));
+          if (request.method === "GET") {
+            const image = backend.objects.get(path);
+            if (!image) {
+              response.statusCode = 404;
+              response.end(JSON.stringify({ statusCode: "404", code: "NoSuchKey", message: "Not found" })); return;
+            }
+            response.setHeader("Content-Type", path.endsWith(".png") ? "image/png" : path.endsWith(".webp") ? "image/webp" : "image/jpeg");
+            response.end(image); return;
+          }
           backend.objects.set(path, bytes);
           await db.query("insert into storage.objects(bucket_id, name) values ('photos', $1)", [path]);
           response.end(JSON.stringify({ Key: `photos/${path}` })); return;

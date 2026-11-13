@@ -1,3 +1,4 @@
+import { createShareId } from "@/features/share/server";
 import { appOrigin } from "@/lib/app-origin";
 import { requireUser } from "@/lib/auth";
 import { MAX_PHOTO_BYTES, PHOTO_SIZE_ERROR } from "@/lib/photo-limits";
@@ -31,7 +32,12 @@ export async function GET(request: Request) {
     return Response.json({ error: "Could not open photos. Please retry." }, { status: 503, headers });
   }
   return Response.json({
-    photos: images.map((file, index) => ({ name: file.name, createdAt: file.created_at, url: signed[index].signedUrl })),
+    photos: images.map((file, index) => ({
+      name: file.name,
+      createdAt: file.created_at,
+      url: signed[index].signedUrl,
+      shareUrl: new URL(`/share/${createShareId(file.name)}`, appOrigin(request)).href,
+    })),
     nextOffset: files.length > 24 ? offset + 24 : null,
   }, { headers });
 }

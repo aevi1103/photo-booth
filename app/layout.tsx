@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { QueryProvider } from "@/components/query-provider";
 import "./globals.css";
 import { Figtree, Inter } from "next/font/google";
+import { Toaster } from "@/components/ui/toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -36,6 +37,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
 				<TooltipProvider>
 					<QueryProvider>{children}</QueryProvider>
 				</TooltipProvider>
+				<Toaster />
 			</body>
 		</html>
 	);

@@ -91,9 +91,35 @@ Uploaded images are served through the authenticated app API and require no rede
 
 Google sign-in is required for the booth and gallery. Ordinary users see their own photos; admins can see all event photos. The gallery shows newest photos first in pages of 24. Delete and bulk-selection controls are visible only to admins on the standalone `/gallery` page, never in the booth sidebar; existing server-side owner/admin access checks remain unchanged. Signed image links expire after 15 minutes; choose **Refresh photos** to renew them. Signing out cannot revoke links that have already been opened or shared.
 
-Choose the printer icon below a photo to open your browser's print dialog and select a local printer. The image is sized to fit the page without cropping. If the photo is unavailable, refresh the gallery before printing. Printer settings and non-printable margins may affect the final output.
+Choose the printer icon below a photo, or open a photo from either gallery and choose **Print** beside **Share** above the image. The preview dialog blurs the background. Printing opens your browser's print dialog to select a local printer. Only the image is printed, sized to fit the page without cropping. If the photo is unavailable, refresh the gallery before printing. Printer settings and non-printable margins may affect the final output.
 
 Admins can choose **Delete** on a photo, or check multiple photos and choose **Delete selected**, then confirm. Only selected photos currently loaded in the gallery are included. The API continues to enforce owner/admin authorization, but ordinary users are not shown deletion controls. Deletion is permanent and does not restore the lifetime upload allowance. If some deletions fail, the gallery refreshes to show what remains so you can retry.
+
+### Share a photo
+
+Open a thumbnail, then choose **Share** above the full-size image. Supported mobile Safari/Chrome browsers open the system share sheet with the actual image file. Cancelling does nothing. If the browser blocks sharing after a slow image download, close the popover and tap Share again; the prepared image is reused. Where file sharing is unavailable, the popover offers Facebook, X, WhatsApp, **Copy link** (with a Copied toast), and **Download image**.
+
+Facebook and X share a public page, not an uploaded file. Only photos already authorized for the current gallery receive signed, unguessable links. Anyone with a link can view that photo without signing in for **seven days from link creation**. The private bucket stays private; the server validates the signed token before reading the image. Links and image responses are not persistently cached by the app. Deleting the original makes future requests fail, but cannot revoke downloads, screenshots, or social-platform caches. Refreshing the gallery creates fresh links. Rotating the server secret invalidates existing share links. These public links are excluded from search indexing, but are not confidential once shared.
+
+The reusable component accepts an image URL, a **public absolute page URL**, and a title:
+
+```tsx
+import { ShareButton } from "@/features/share/ShareButton";
+
+{photo.shareUrl && (
+  <ShareButton
+    imageUrl={`${photo.shareUrl}/image`}
+    pageUrl={photo.shareUrl}
+    title="Nugget Photo Booth memory"
+  />
+)}
+```
+
+`shareImage(imageUrl, pageUrl, title)` in [`features/share/shareImage.ts`](features/share/shareImage.ts) is also reusable. Call it from a user click; it returns `shared`, `cancelled`, or `unsupported` and throws other failures for the caller to display.
+
+No paid APIs, new API keys, Facebook app review, or social SDKs are needed. Existing hosting/Storage bandwidth limits still apply. Set `APP_URL` to the real **HTTPS** origin in production so Open Graph/Twitter metadata points to publicly reachable absolute URLs. The OG image uses the original photo without cropping rather than forcing it into 1200x630.
+
+For testing, use localhost or a trusted HTTPS tunnel; plain HTTP on a LAN address does not enable the Web Share API or clipboard. A social crawler cannot reach localhost: use the public HTTPS deployment/tunnel, ensure anonymous access to both `/share/[id]` and `/share/[id]/image`, and check the large-image preview. Facebook's [Sharing Debugger](https://developers.facebook.com/tools/debug/) can refresh its OG cache. Test native sharing and cancellation on actual iOS Safari and Android Chrome; desktop Playwright coverage mocks the native API and checks the fallback and public metadata.
 
 ## Roles, upload limits, and recovery
 
