@@ -14,7 +14,7 @@ export function Gallery() {
 		<main className="mx-auto w-full max-w-360 px-[6%] text-[#274c63] [--primary:#568eae] [--primary-foreground:#fff] [--foreground:#274c63] [--background:#f5faff] [--border:#dceaf2] [--muted:#e8f5fb] [--muted-foreground:#345d76] [--ring:#72a9c8]">
 			<header className="topbar sticky top-0 z-30 flex h-20.5 items-center justify-between border-b border-[#e1edf4] bg-[linear-gradient(90deg,#f5faff00,#f5faffeb_18%,#f5faffeb_82%,#f5faff00)] backdrop-blur-[12px] [@media(max-width:480px)]:h-auto [@media(max-width:480px)]:min-h-[82px] [@media(max-width:480px)]:flex-wrap [@media(max-width:480px)]:gap-3 [@media(max-width:480px)]:py-3.5">
 				<div className="flex items-center gap-2 text-[22px] font-bold text-[#558eae] [@media(max-width:480px)]:text-[19px]">
-					<Cloud size={26} /> little cloud{" "}
+					<Cloud size={26} /> nugget photo booth{" "}
 					<span className="ml-1 text-[9px] tracking-[.16em] text-[#9bb5c3] [@media(max-width:800px)]:hidden">
 						PHOTO BOOTH
 					</span>

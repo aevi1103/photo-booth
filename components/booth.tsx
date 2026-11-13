@@ -3,10 +3,10 @@
 import { Menu, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import PixelSnow from "@/components/PixelSnow";
 import { useBoothController } from "@/components/booth/hooks/use-booth-controller";
 import { BoothPreview } from "@/components/booth/preview";
 import type { Backdrop } from "@/components/booth/store/store";
+import PixelSnow from "@/components/PixelSnow";
 import { SignOut } from "@/components/sign-out";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -69,7 +69,7 @@ export function Booth({ backgrounds: defaults }: { backgrounds: Backdrop[] }) {
 	return (
 		<Drawer open={menuOpen} onOpenChange={setMenuOpen}>
 			<main className="booth-shell capture-shell mx-auto min-h-dvh w-full max-w-none px-[clamp(12px,2vw,32px)] py-3 min-[801px]:px-[clamp(16px,2vw,32px)] has-[.booth-preview.is-photo-mode]:fixed has-[.booth-preview.is-photo-mode]:inset-0 has-[.booth-preview.is-photo-mode]:z-[100] has-[.booth-preview.is-photo-mode]:m-0 has-[.booth-preview.is-photo-mode]:h-dvh has-[.booth-preview.is-photo-mode]:w-screen has-[.booth-preview.is-photo-mode]:overflow-hidden has-[.booth-preview.is-photo-mode]:bg-black has-[.booth-preview.is-photo-mode]:p-0 [&:has(.booth-preview.is-photo-mode)>:not(.booth-grid)]:hidden">
-				<h1 className="sr-only">Little Cloud Photo Booth</h1>
+				<h1 className="sr-only">Nugget Photo Booth</h1>
 				<DrawerContent className="text-[#274c63]">
 					<DrawerHeader>
 						<DrawerTitle>Menu</DrawerTitle>

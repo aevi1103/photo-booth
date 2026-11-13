@@ -251,7 +251,10 @@ export function BoothPreview({
 								/>
 							)}
 							{countdown !== null && (
-								<div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 text-[100px] font-bold text-white [text-shadow:0_2px_20px_#0008]">
+								<div
+									className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 text-[100px] font-bold
+								 text-white [text-shadow:0_2px_20px_#0008]"
+								>
 									{countdown}
 								</div>
 							)}
@@ -262,7 +265,7 @@ export function BoothPreview({
 			</div>
 			{connected && !photo && settings.greenScreen && keyDetected === false && (
 				<p
-					className="mt-3.5 rounded-[9px] bg-[#fff1ed] p-[11px] text-[13px] text-[#934b43]"
+					className="mt-3.5 rounded-[9px] bg-[#fff1ed] p-2.75 text-[13px] text-[#934b43]"
 					role="status"
 				>
 					The camera can&apos;t see the green key color, so green areas
@@ -273,7 +276,7 @@ export function BoothPreview({
 			{backdropError && (
 				<>
 					<p
-						className="mt-3.5 rounded-[9px] bg-[#fff1ed] p-[11px] text-[13px] text-[#934b43]"
+						className="mt-3.5 rounded-[9px] bg-[#fff1ed] p-2.75 text-[13px] text-[#934b43]"
 						role="alert"
 					>
 						{backdropError}
@@ -285,7 +288,7 @@ export function BoothPreview({
 			)}
 			{message && (
 				<p
-					className="mt-3.5 rounded-[9px] bg-[#fff1ed] p-[11px] text-[13px] text-[#934b43]"
+					className="mt-3.5 rounded-[9px] bg-[#fff1ed] p-2.75 text-[13px] text-[#934b43]"
 					role="alert"
 				>
 					{message}
@@ -293,7 +296,7 @@ export function BoothPreview({
 			)}
 			{frameError && (
 				<p
-					className="mt-3.5 rounded-[9px] bg-[#fff1ed] p-[11px] text-[13px] text-[#934b43]"
+					className="mt-3.5 rounded-[9px] bg-[#fff1ed] p-2.75 text-[13px] text-[#934b43]"
 					role="alert"
 				>
 					{frameError}

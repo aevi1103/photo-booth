@@ -23,7 +23,7 @@ export function BackdropManager() {
 					href="/"
 					className="flex items-center gap-2 text-[22px] font-bold text-[#558eae] no-underline [@media(max-width:480px)]:text-[19px]"
 				>
-					little cloud
+					Nugget Photo Booth
 				</Link>
 				<div className="flex items-center gap-2">
 					<Link href="/">

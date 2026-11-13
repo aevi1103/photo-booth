@@ -1,7 +1,9 @@
 "use client";
 
+import { Printer } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
+import { useReactToPrint } from "react-to-print";
 import type { GalleryState } from "@/components/gallery/use-gallery";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -18,9 +20,17 @@ import { useDeletePhoto } from "@/lib/queries/photos";
 
 export function GalleryPhotos({ gallery }: { gallery: GalleryState }) {
 	const [photosToDelete, setPhotosToDelete] = useState<string[]>([]);
+	const [printError, setPrintError] = useState("");
 	const [selectedNames, setSelectedNames] = useState<ReadonlySet<string>>(
 		new Set(),
 	);
+	const printPhoto = useReactToPrint({
+		ignoreGlobalStyles: true,
+		pageStyle:
+			"@page { size: auto; margin: 0; } body { margin: 0; } img { display: block; width: 100%; height: 100vh; object-fit: contain; }",
+		onPrintError: () =>
+			setPrintError("Could not print photo. Please try again."),
+	});
 	const deletion = useDeletePhoto();
 	const {
 		photos,
@@ -94,6 +104,14 @@ export function GalleryPhotos({ gallery }: { gallery: GalleryState }) {
 					{staleError.message} Showing previously loaded photos.
 				</p>
 			)}
+			{printError && (
+				<p
+					className="mt-3.5 rounded-[9px] bg-[#fff1ed] p-[11px] text-[13px] text-[#934b43]"
+					role="alert"
+				>
+					{printError}
+				</p>
+			)}
 			{!isPending && !loadError && !photos.length && (
 				<p className="py-12 text-center">
 					No photos yet. Capture a photo in the booth to start making memories.
@@ -132,34 +150,60 @@ export function GalleryPhotos({ gallery }: { gallery: GalleryState }) {
 							referrerPolicy="no-referrer"
 							aria-label={`Open photo ${photo.name}`}
 						>
-							<Image
-								className="w-full aspect-[1153/768] object-contain"
-								src={photo.url}
-								alt={`Baby-shower memory ${photo.name}`}
-								loading="lazy"
-								width={1153}
-								height={768}
-								unoptimized
-								referrerPolicy="no-referrer"
-								onError={() => markImageFailed(photo.url)}
-							/>
+							<div data-print-photo>
+								<Image
+									className="w-full aspect-[1153/768] object-contain"
+									src={photo.url}
+									alt={`Baby-shower memory ${photo.name}`}
+									loading="lazy"
+									width={1153}
+									height={768}
+									unoptimized
+									referrerPolicy="no-referrer"
+									onError={() => markImageFailed(photo.url)}
+								/>
+							</div>
 						</a>
 						<figcaption className="p-3 text-sm text-[#6b8c9d]">
 							<div className="flex items-center justify-between gap-3">
 								<time dateTime={photo.createdAt}>
 									{new Date(photo.createdAt).toLocaleString()}
 								</time>
-								<Button
-									variant="destructive"
-									size="sm"
-									disabled={deletion.isPending}
-									onClick={() => {
-										deletion.reset();
-										setPhotosToDelete([photo.name]);
-									}}
-								>
-									Delete
-								</Button>
+								<div className="flex items-center gap-2">
+									<Button
+										variant="outline"
+										size="icon-sm"
+										aria-label={`Print photo ${photo.name}`}
+										title="Print photo"
+										disabled={failedUrls.has(photo.url)}
+										onClick={(event) => {
+											setPrintError("");
+											const content = event.currentTarget
+												.closest("figure")
+												?.querySelector("[data-print-photo]");
+											if (!content) {
+												setPrintError(
+													"Could not print photo. Please try again.",
+												);
+												return;
+											}
+											printPhoto(() => content);
+										}}
+									>
+										<Printer />
+									</Button>
+									<Button
+										variant="destructive"
+										size="sm"
+										disabled={deletion.isPending}
+										onClick={() => {
+											deletion.reset();
+											setPhotosToDelete([photo.name]);
+										}}
+									>
+										Delete
+									</Button>
+								</div>
 							</div>
 							{failedUrls.has(photo.url) && (
 								<p className="text-[#934b43]" role="alert">

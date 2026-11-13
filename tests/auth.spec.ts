@@ -138,6 +138,58 @@ test("gallery isolates users while admins can view all including legacy photos",
   } finally { await admin.dispose(); }
 });
 
+test("gallery prints only the selected photo and disables printing unavailable images", async ({ page, backend }) => {
+  const names = [1, 2, 3].map((number) => `${userId}/print-${number}.jpg`);
+  for (const name of names) {
+    await backend.db.query("insert into storage.objects(bucket_id, name) values ('photos', $1)", [name]);
+  }
+  const image = await readFile("public/images/photoboot-bg.jpeg");
+  await page.route("**/object/sign/photos/**", async (route) => {
+    if (route.request().url().includes("print-3.jpg")) await route.fulfill({ status: 404 });
+    else await route.fulfill({ status: 200, contentType: "image/jpeg", body: image });
+  });
+  await page.addInitScript(() => {
+    window.print = () => {
+      window.top?.postMessage({
+        type: "test-print",
+        images: [...document.querySelectorAll("img")].map((img) => img.src),
+        text: document.body.innerText,
+        pageMargin: [...document.styleSheets].flatMap((sheet) => [...sheet.cssRules])
+          .find((rule) => rule instanceof CSSPageRule)?.style.margin,
+        imageStyle: (() => {
+          const img = document.querySelector("img")!;
+          const style = getComputedStyle(img);
+          return {
+            width: img.getBoundingClientRect().width, height: img.getBoundingClientRect().height,
+            viewportWidth: document.documentElement.clientWidth, viewportHeight: window.innerHeight, fit: style.objectFit,
+          };
+        })(),
+      }, "*");
+    };
+    if (window === window.top) {
+      window.addEventListener("message", (event) => {
+        if (event.data?.type === "test-print") {
+          document.body.dataset.printed = JSON.stringify(event.data);
+        }
+      });
+    }
+  });
+  await page.goto("/gallery");
+  await expect(page.getByRole("button", { name: `Print photo ${names[2]}` })).toBeDisabled();
+  for (const name of names.slice(0, 2)) {
+    await page.getByRole("button", { name: `Print photo ${name}` }).click();
+    await expect.poll(async () => page.locator("body").getAttribute("data-printed")).toContain(name);
+    const printed = JSON.parse((await page.locator("body").getAttribute("data-printed"))!);
+    expect(printed.images).toHaveLength(1);
+    expect(printed.images[0]).toContain(name);
+    expect(printed.text).not.toContain("Delete");
+    expect(printed.pageMargin).toBe("0px");
+    expect(printed.imageStyle.fit).toBe("contain");
+    expect(printed.imageStyle.width).toBe(printed.imageStyle.viewportWidth);
+    expect(printed.imageStyle.height).toBe(printed.imageStyle.viewportHeight);
+  }
+});
+
 test("photo deletion is owner/admin scoped and does not restore upload quota", async ({ request, backend, playwright }) => {
   expect((await request.post("/api/photos", upload)).status()).toBe(200);
   const ownName = (await (await request.get("/api/photos")).json()).photos[0].name as string;
