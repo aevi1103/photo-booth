@@ -205,6 +205,26 @@ test.beforeEach(async ({ page }) => {
 	});
 });
 
+test("booth background moves gently and respects reduced motion", async ({
+	page,
+}) => {
+	await page.goto("/");
+	const background = () =>
+		page.locator(".booth-shell").evaluate((shell) => {
+			const style = getComputedStyle(shell, "::after");
+			return {
+				animation: style.animationName,
+				pointerEvents: style.pointerEvents,
+			};
+		});
+	expect(await background()).toEqual({
+		animation: "booth-cloud-drift",
+		pointerEvents: "none",
+	});
+	await page.emulateMedia({ reducedMotion: "reduce" });
+	expect((await background()).animation).toBe("none");
+});
+
 for (const viewport of [
 	{ width: 390, height: 844 },
 	{ width: 844, height: 390 },
@@ -891,6 +911,11 @@ for (const viewport of [
 		await expect(page.getByText("LIVE", { exact: true })).toBeVisible();
 
 		await page.getByRole("button", { name: "Photo mode" }).click();
+		expect(
+			await page
+				.locator(".booth-shell")
+				.evaluate((shell) => getComputedStyle(shell, "::after").display),
+		).toBe("none");
 		await expect(page.locator(".preview-card")).toHaveCSS(
 			"position",
 			"absolute",
