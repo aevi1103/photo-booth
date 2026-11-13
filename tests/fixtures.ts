@@ -124,6 +124,17 @@ export const test = base.extend<{ backend: Backend }, { supabase: Backend }>({
             ? { path, error: "Cannot sign", signedURL: null }
             : { path, signedURL: `/object/sign/photos/${path}?token=test-token` }))); return;
         }
+        if (url.pathname === "/storage/v1/object/photos" && request.method === "DELETE") {
+          if (backend.storageError) {
+            response.statusCode = backend.storageError;
+            response.end(JSON.stringify({ statusCode: String(backend.storageError), message: "Test deletion failure" })); return;
+          }
+          for (const path of body.prefixes as string[]) {
+            backend.objects.delete(path);
+            await db.query("delete from storage.objects where bucket_id = 'photos' and name = $1", [path]);
+          }
+          response.end(JSON.stringify([])); return;
+        }
         response.statusCode = 404; response.end(JSON.stringify({ message: "Unexpected test request" }));
       } catch (error) {
         console.error("Mock Supabase failed:", error);

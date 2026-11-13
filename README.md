@@ -91,6 +91,8 @@ Uploaded images are served through the authenticated app API and require no rede
 
 Google sign-in is required for the booth and gallery. Ordinary users see their own photos; admins can see all event photos. The gallery shows newest photos first in pages of 24. Signed image links expire after 15 minutes; choose **Refresh photos** to renew them. Signing out cannot revoke links that have already been opened or shared.
 
+Choose **Delete** on a photo, or check multiple photos and choose **Delete selected**, then confirm. Only selected photos currently loaded in the gallery are included. Users can delete their own photos; admins can delete any event photo. Deletion is permanent and does not restore the lifetime upload allowance. If some deletions fail, the gallery refreshes to show what remains so you can retry.
+
 ## Roles, upload limits, and recovery
 
 ### Make an account an admin

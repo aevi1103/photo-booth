@@ -98,7 +98,7 @@ async function compositionMatches(
 			actual.width = source.width;
 			actual.height = source.height;
 			const actualContext = actual.getContext("2d")!;
-			const photo = document.querySelector<HTMLImageElement>(".captured");
+			const photo = document.querySelector<HTMLImageElement>(".preview img");
 			if (captured && (!photo || !photo.complete)) return false;
 			actualContext.drawImage(captured ? photo! : source, 0, 0);
 			const points = [
@@ -240,18 +240,15 @@ for (const viewport of [
 		await expect(
 			page.getByText("20 of 20 photo uploads remaining"),
 		).toBeVisible();
-		if (viewport.width <= 800)
-			await page
-				.getByRole("button", { name: "Show settings", exact: true })
-				.click();
-		const cameraPicker =
-			viewport.width <= 800
-				? page.getByLabel("CAMERA", { exact: true })
-				: page.getByRole("combobox", { name: "Camera device" });
-		await cameraPicker.selectOption("facing:user");
+		const cameraPicker = page.getByRole("combobox", {
+			name: "Camera device",
+		});
+		await cameraPicker.click();
+		await page.getByRole("option", { name: "Front camera (selfie)" }).click();
 		await page.getByRole("button", { name: "Connect", exact: true }).click();
 		await expect(page.getByText("LIVE", { exact: true })).toBeVisible();
-		await cameraPicker.selectOption("facing:environment");
+		await cameraPicker.click();
+		await page.getByRole("option", { name: "Rear camera" }).click();
 		await page.getByRole("button", { name: "Connect", exact: true }).click();
 		await expect(
 			page.getByRole("button", { name: "Take a photo" }),
@@ -319,7 +316,9 @@ for (const viewport of [
 			),
 		).toBe(true);
 		await page.getByRole("button", { name: "Take a photo" }).click();
-		await expect(page.getByLabel("CAMERA", { exact: true })).toBeDisabled();
+		await expect(
+			page.getByRole("combobox", { name: "Camera device" }),
+		).toBeDisabled();
 		await expect(page.getByAltText("A moment at the baby shower")).toBeVisible({
 			timeout: 10_000,
 		});
@@ -388,8 +387,6 @@ for (const [width, height] of [
 		const bounds = await page.locator(".preview").boundingBox();
 		expect(bounds!.width / bounds!.height).toBeCloseTo(width / height, 2);
 		await expect.poll(() => compositionMatches(page, opening)).toBe(true);
-		await page.getByLabel("Mirror photo and preview").check();
-		await expect.poll(() => compositionMatches(page, opening, true)).toBe(true);
 		await page.getByRole("button", { name: "Take a photo" }).click();
 		const photo = page.getByAltText("A moment at the baby shower");
 		await expect(photo).toBeVisible({ timeout: 10_000 });
@@ -399,7 +396,7 @@ for (const [width, height] of [
 				image.naturalHeight,
 			]),
 		).toEqual([width, height]);
-		expect(await compositionMatches(page, opening, true, true)).toBe(true);
+		expect(await compositionMatches(page, opening, false, true)).toBe(true);
 	});
 }
 
@@ -509,11 +506,10 @@ test("booth persists preferences locally but not the active camera session", asy
 		page.getByText("20 of 20 photo uploads remaining"),
 	).toBeVisible();
 	const camera = page.getByRole("combobox", { name: "Camera device" });
-	await camera.selectOption("facing:user");
-	await expect(camera).toHaveValue("facing:user");
-	await page.getByLabel("Mirror photo and preview").check();
-	await page.getByLabel("Replace green screen").check();
-	await page.getByRole("button", { name: "baby shower", exact: true }).click();
+	await camera.click();
+	await page.getByRole("option", { name: "Front camera (selfie)" }).click();
+	await expect(camera).toHaveValue("Front camera (selfie)");
+	await page.locator(".background-option").nth(1).click();
 	await expect
 		.poll(() =>
 			page.evaluate(
@@ -530,12 +526,11 @@ test("booth persists preferences locally but not the active camera session", asy
 
 	await expect(
 		page.getByRole("combobox", { name: "Camera device" }),
-	).toHaveValue("facing:user");
-	await expect(page.getByLabel("Mirror photo and preview")).toBeChecked();
-	await expect(page.getByLabel("Replace green screen")).toBeChecked();
-	await expect(
-		page.getByRole("button", { name: "baby shower", exact: true }),
-	).toHaveAttribute("aria-pressed", "true");
+	).toHaveValue("Front camera (selfie)");
+	await expect(page.locator(".background-option").nth(1)).toHaveAttribute(
+		"aria-pressed",
+		"true",
+	);
 	await expect(page.getByText("LIVE", { exact: true })).toHaveCount(0);
 	await expect(
 		page.getByRole("button", { name: "Take a photo" }),
@@ -645,13 +640,10 @@ test("responsive styles include the original breakpoint widths", async ({
 	await page.setViewportSize({ width: 800, height: 900 });
 	await page.goto("/");
 	await expect(
-		page.getByRole("button", { name: "Show settings" }),
+		page.getByRole("combobox", { name: "Camera device" }),
 	).toBeVisible();
-	await expect(page.getByLabel("CAMERA", { exact: true })).toBeHidden();
+	await expect(page.locator("aside.controls-card")).toHaveCount(0);
 	await page.setViewportSize({ width: 801, height: 900 });
-	await expect(
-		page.getByRole("button", { name: "Show settings" }),
-	).toBeHidden();
 	await expect(
 		page.getByRole("combobox", { name: "Camera device" }),
 	).toBeVisible();
@@ -681,7 +673,7 @@ for (const width of [390, 1920]) {
 		const grid = await page.locator(".booth-grid").boundingBox();
 		expect(grid!.width).toBeGreaterThanOrEqual(width - 64);
 		const menu = page
-			.locator("aside.controls-card")
+			.locator(".preview-heading")
 			.getByRole("button", { name: "Menu", exact: true });
 		await expect(page.getByRole("link", { name: "View gallery" })).toBeHidden();
 		await menu.click();
@@ -716,18 +708,16 @@ for (const width of [390, 1920]) {
 	});
 }
 
-test("mobile puts booth first and toggles settings without stopping the camera or resetting options", async ({
+test("mobile puts booth first with camera and menu controls in the preview", async ({
 	page,
 }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.goto("/");
-	const toggle = page.getByRole("button", {
-		name: "Show settings",
-		exact: true,
-	});
 	await expect(page.locator(".hero")).toHaveCount(0);
-	await expect(toggle).toHaveAttribute("aria-expanded", "false");
-	await expect(page.getByLabel("CAMERA", { exact: true })).toBeHidden();
+	await expect(page.locator("aside.controls-card")).toHaveCount(0);
+	await expect(
+		page.getByRole("combobox", { name: "Camera device" }),
+	).toBeVisible();
 	await expect(page.locator(".booth-preview")).toHaveCSS(
 		"border-top-width",
 		"0px",
@@ -750,43 +740,46 @@ test("mobile puts booth first and toggles settings without stopping the camera o
 		);
 	expect(buttons).toHaveLength(2);
 	expect(buttons[0]).toBe(buttons[1]);
-	await expect(page.getByRole("button", { name: "Take a photo" })).toHaveCSS(
-		"background-color",
-		"rgb(86, 142, 174)",
-	);
+	const photoMode = await page
+		.getByRole("button", { name: "Photo mode" })
+		.boundingBox();
+	const menu = await page
+		.getByRole("button", { name: "Menu", exact: true })
+		.boundingBox();
+	expect(menu!.x).toBeGreaterThanOrEqual(photoMode!.x + photoMode!.width - 1);
+	expect(
+		Math.abs(
+			menu!.y + menu!.height / 2 - (photoMode!.y + photoMode!.height / 2),
+		),
+	).toBeLessThan(3);
 	await expect(
 		page.getByRole("button", { name: "Enable voice capture" }),
 	).toHaveAttribute("aria-pressed", "false");
-	await expect(
-		page.getByRole("button", { name: "Enable voice capture" }),
-	).toHaveCSS("border-top-style", "dashed");
-	const preview = await page.locator(".preview-card").boundingBox();
-	const settings = await page.locator("aside.controls-card").boundingBox();
-	expect(preview).not.toBeNull();
-	expect(settings).not.toBeNull();
-	expect(settings!.y).toBeGreaterThanOrEqual(preview!.y + preview!.height);
-	await toggle.click();
-	await page.getByLabel("Mirror photo and preview").check();
 	await page.getByRole("button", { name: "Connect", exact: true }).click();
 	await expect(page.getByText("LIVE", { exact: true })).toBeVisible();
-	await page
-		.getByRole("button", { name: "Hide settings", exact: true })
-		.click();
-	await expect(toggle).toHaveAttribute("aria-expanded", "false");
-	await expect(page.getByLabel("CAMERA", { exact: true })).toBeHidden();
 	await expect(
 		page.getByRole("button", { name: "Take a photo" }),
 	).toBeEnabled();
-	await toggle.click();
-	await expect(page.getByLabel("Mirror photo and preview")).toBeChecked();
-	await page
-		.getByRole("button", { name: "Hide settings", exact: true })
-		.click();
-	await page.setViewportSize({ width: 1280, height: 900 });
+});
+
+test("backdrop carousel controls move between frames on mobile", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 320, height: 844 });
+	await page.goto("/");
+
+	const carousel = page.getByRole("region", { name: "Choose a frame" });
 	await expect(
-		page.getByRole("combobox", { name: "Camera device" }),
-	).toBeVisible();
-	await expect(toggle).toBeHidden();
+		carousel.getByRole("button", { name: "Next backdrops" }),
+	).toBeEnabled();
+	await carousel.getByRole("button", { name: "Next backdrops" }).click();
+	await expect(
+		carousel.getByRole("button", { name: "Previous backdrops" }),
+	).toBeEnabled();
+	await carousel.getByRole("button", { name: "Previous backdrops" }).click();
+	await expect(
+		carousel.getByRole("button", { name: "Previous backdrops" }),
+	).toBeDisabled();
 });
 
 test("desktop keeps the camera preview dominant with compact surrounding layout", async ({
@@ -806,7 +799,6 @@ test("desktop keeps the camera preview dominant with compact surrounding layout"
 	const photoMode = await page
 		.getByRole("button", { name: "Photo mode" })
 		.boundingBox();
-	const settings = await page.locator("aside.controls-card").boundingBox();
 	expect(stage?.y).toBeLessThan(100);
 	expect(stage?.width).toBeGreaterThanOrEqual(650);
 	expect(camera!.y).toBeLessThan(picker!.y);
@@ -819,39 +811,16 @@ test("desktop keeps the camera preview dominant with compact surrounding layout"
 		"flex-direction",
 		"column",
 	);
-	expect(settings?.width).toBeLessThanOrEqual(280);
-	expect(settings?.y).toBeLessThan(preview!.y + preview!.height);
-
-	const settingsToggle = page.getByRole("button", {
-		name: "Hide settings",
-		exact: true,
-	});
-	await settingsToggle.hover();
-	await expect(settingsToggle).toHaveCSS(
-		"background-color",
-		"rgb(232, 245, 251)",
-	);
-	await expect(settingsToggle).toHaveCSS("color", "rgb(52, 93, 118)");
-	await settingsToggle.click();
-	await expect(page.locator("aside.controls-card")).toBeHidden();
-	await expect(
-		page.getByRole("button", { name: "Show settings", exact: true }),
-	).toHaveAttribute("aria-expanded", "false");
-	const expandedStage = await page.locator(".preview-stage").boundingBox();
-	expect(expandedStage!.width).toBeGreaterThan(stage!.width);
-
-	await page
-		.getByRole("button", { name: "Show settings", exact: true })
-		.click();
-	await expect(page.locator("aside.controls-card")).toBeVisible();
-	await page
-		.getByRole("button", { name: "Hide settings", exact: true })
-		.click();
-	await page.reload();
-	await expect(page.locator("aside.controls-card")).toBeHidden();
-	await expect(
-		page.getByRole("button", { name: "Show settings", exact: true }),
-	).toHaveAttribute("aria-expanded", "false");
+	expect(preview).not.toBeNull();
+	await expect(page.locator("aside.controls-card")).toHaveCount(0);
+	const menu = await page
+		.getByRole("button", { name: "Menu", exact: true })
+		.boundingBox();
+	expect(
+		Math.abs(
+			menu!.y + menu!.height / 2 - (photoMode!.y + photoMode!.height / 2),
+		),
+	).toBeLessThan(3);
 });
 
 for (const viewport of [
@@ -873,7 +842,6 @@ for (const viewport of [
 			".preview",
 			".backdrop-picker",
 			".actions",
-			".controls-card",
 		]) {
 			const bounds = await page.locator(selector).boundingBox();
 			expect(bounds).not.toBeNull();
@@ -919,18 +887,8 @@ for (const viewport of [
 	}) => {
 		await page.setViewportSize(viewport);
 		await page.goto("/");
-		if (viewport.width <= 800) {
-			await page
-				.getByRole("button", { name: "Show settings", exact: true })
-				.click();
-		}
 		await page.getByRole("button", { name: "Connect", exact: true }).click();
 		await expect(page.getByText("LIVE", { exact: true })).toBeVisible();
-		if (viewport.width <= 800) {
-			await page
-				.getByRole("button", { name: "Hide settings", exact: true })
-				.click();
-		}
 
 		await page.getByRole("button", { name: "Photo mode" }).click();
 		await expect(page.locator(".preview-card")).toHaveCSS(
@@ -941,7 +899,7 @@ for (const viewport of [
 			page.getByRole("button", { name: "Menu", exact: true }),
 		).toBeHidden();
 		await expect(page.locator(".hero")).toBeHidden();
-		await expect(page.locator(".controls-card")).toBeHidden();
+		await expect(page.locator(".controls-card")).toHaveCount(0);
 		await expect(
 			page.getByRole("button", { name: "Take a photo" }),
 		).toBeVisible();
@@ -1388,7 +1346,7 @@ test("the camera shows through the frame window and green keying stays optional"
 	});
 	await page.goto("/");
 	await expect(
-		page.getByRole("region", { name: "Choose a backdrop" }),
+		page.getByRole("region", { name: "Choose a frame" }),
 	).toBeVisible();
 	await page.getByRole("button", { name: "Connect", exact: true }).click();
 	await expect(
@@ -1417,8 +1375,20 @@ test("the camera shows through the frame window and green keying stays optional"
 			return red < 60 && green > 200;
 		})
 		.toBe(true);
-	// Keying replaces green with the pale fallback fill.
-	await page.getByLabel("Replace green screen").check();
+	await page.evaluate(() => {
+		localStorage.setItem(
+			"photo-booth-preferences",
+			JSON.stringify({
+				state: { settings: { greenScreen: true } },
+				version: 0,
+			}),
+		);
+	});
+	await page.reload();
+	await page.getByRole("button", { name: "Connect", exact: true }).click();
+	await expect(
+		page.getByRole("button", { name: "Take a photo" }),
+	).toBeEnabled();
 	await expect
 		.poll(async () => {
 			const [red, , blue] = await sample();
@@ -1431,6 +1401,13 @@ test("booth explains when the key color is not visible to the camera", async ({
 	page,
 }) => {
 	await page.addInitScript(() => {
+		localStorage.setItem(
+			"photo-booth-preferences",
+			JSON.stringify({
+				state: { settings: { greenScreen: true } },
+				version: 0,
+			}),
+		);
 		const source = document.createElement("canvas");
 		source.width = 320;
 		source.height = 180;
@@ -1457,8 +1434,6 @@ test("booth explains when the key color is not visible to the camera", async ({
 	await expect(
 		page.getByRole("button", { name: "Take a photo" }),
 	).toBeEnabled();
-	await expect(hint).toHaveCount(0);
-	await page.getByLabel("Replace green screen").check();
 	await expect(hint).toBeVisible({ timeout: 10_000 });
 	await page.evaluate(() => {
 		(window as unknown as { cameraColor: string }).cameraColor = "#00a000";
@@ -1468,8 +1443,6 @@ test("booth explains when the key color is not visible to the camera", async ({
 		(window as unknown as { cameraColor: string }).cameraColor = "#c8b49a";
 	});
 	await expect(hint).toBeVisible({ timeout: 10_000 });
-	await page.getByLabel("Replace green screen").uncheck();
-	await expect(hint).toHaveCount(0, { timeout: 10_000 });
 });
 
 test("admin uploads backdrops and guests select the carousel below the video", async ({

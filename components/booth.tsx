@@ -1,23 +1,22 @@
 "use client";
 
-import { Menu } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useStore } from "zustand";
 import { useBoothController } from "@/components/booth/hooks/use-booth-controller";
 import { BoothPreview } from "@/components/booth/preview";
-import { BoothSettings } from "@/components/booth/settings";
 import type { Backdrop } from "@/components/booth/store/store";
 import { SignOut } from "@/components/sign-out";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogHeader,
-	DialogTitle,
-	DialogTrigger,
-} from "@/components/ui/dialog";
+	Drawer,
+	DrawerClose,
+	DrawerContent,
+	DrawerDescription,
+	DrawerHeader,
+	DrawerTitle,
+	DrawerTrigger,
+} from "@/components/ui/drawer";
 import { useBackdrops } from "@/lib/queries/backdrops";
 
 export function Booth({ backgrounds: defaults }: { backgrounds: Backdrop[] }) {
@@ -47,7 +46,6 @@ export function Booth({ backgrounds: defaults }: { backgrounds: Backdrop[] }) {
 		retake,
 		prepareSound,
 	} = useBoothController(backgrounds);
-	const settingsVisible = useStore(store, (state) => state.settingsVisible);
 
 	useEffect(() => {
 		if (backdrops.isPending) return;
@@ -68,47 +66,47 @@ export function Booth({ backgrounds: defaults }: { backgrounds: Backdrop[] }) {
 	}, [backdrops.isPending, backgrounds, store]);
 
 	return (
-		<Dialog open={menuOpen} onOpenChange={setMenuOpen}>
-			<main className="booth-shell capture-shell mx-auto min-h-dvh w-full max-w-none px-[clamp(12px,2vw,32px)] py-3 min-[801px]:px-[clamp(16px,2vw,32px)] has-[.booth-preview.is-photo-mode]:fixed has-[.booth-preview.is-photo-mode]:inset-0 has-[.booth-preview.is-photo-mode]:z-[100] has-[.booth-preview.is-photo-mode]:m-0 has-[.booth-preview.is-photo-mode]:h-dvh has-[.booth-preview.is-photo-mode]:w-screen has-[.booth-preview.is-photo-mode]:overflow-hidden has-[.booth-preview.is-photo-mode]:bg-black has-[.booth-preview.is-photo-mode]:p-0 [&:has(.booth-preview.is-photo-mode)>:not(.booth-grid)]:hidden [&:has(.booth-preview.is-photo-mode)_.controls-card]:hidden">
+		<Drawer open={menuOpen} onOpenChange={setMenuOpen}>
+			<main className="booth-shell capture-shell mx-auto min-h-dvh w-full max-w-none px-[clamp(12px,2vw,32px)] py-3 min-[801px]:px-[clamp(16px,2vw,32px)] has-[.booth-preview.is-photo-mode]:fixed has-[.booth-preview.is-photo-mode]:inset-0 has-[.booth-preview.is-photo-mode]:z-[100] has-[.booth-preview.is-photo-mode]:m-0 has-[.booth-preview.is-photo-mode]:h-dvh has-[.booth-preview.is-photo-mode]:w-screen has-[.booth-preview.is-photo-mode]:overflow-hidden has-[.booth-preview.is-photo-mode]:bg-black has-[.booth-preview.is-photo-mode]:p-0 [&:has(.booth-preview.is-photo-mode)>:not(.booth-grid)]:hidden">
 				<h1 className="sr-only">Little Cloud Photo Booth</h1>
-				<DialogContent className="text-[#274c63]">
-					<DialogHeader>
-						<DialogTitle>Menu</DialogTitle>
-						<DialogDescription>
+				<DrawerContent className="text-[#274c63]">
+					<DrawerHeader>
+						<DrawerTitle>Menu</DrawerTitle>
+						<DrawerDescription>
 							View your memories or manage your account.
-						</DialogDescription>
-					</DialogHeader>
+						</DrawerDescription>
+					</DrawerHeader>
+					<DrawerClose
+						render={
+							<Button
+								variant="ghost"
+								className="absolute top-4 right-4"
+								size="icon-sm"
+							/>
+						}
+					>
+						<X />
+						<span className="sr-only">Close</span>
+					</DrawerClose>
 					<nav
-						className="grid gap-2.5 [&_.booth-navigation]:min-h-11 [&_.booth-navigation]:w-full"
+						className="grid gap-2.5 p-4 pt-3 [&_.booth-navigation]:min-h-11 [&_.booth-navigation]:w-full"
 						aria-label="Booth menu"
 					>
 						{quota.data?.role === "admin" && (
-							<Link
-								href="/admin/backdrops"
-								onClick={() => setMenuOpen(false)}
-								className={buttonVariants({
-									variant: "outline",
-									className:
-										"booth-navigation border-[#dceaf2] font-[inherit] text-[#558eae] hover:bg-[#e8f5fb] hover:text-[#345d76]",
-								})}
-							>
-								Manage backdrops
+							<Link href="/admin/backdrops" onClick={() => setMenuOpen(false)}>
+								<Button variant="outline" className="w-full cursor-pointer">
+									Manage backdrops
+								</Button>
 							</Link>
 						)}
-						<Link
-							href="/gallery"
-							onClick={() => setMenuOpen(false)}
-							className={buttonVariants({
-								variant: "outline",
-								className:
-									"booth-navigation border-[#dceaf2] font-[inherit] text-[#558eae] hover:bg-[#e8f5fb] hover:text-[#345d76]",
-							})}
-						>
-							View gallery
+						<Link href="/gallery" onClick={() => setMenuOpen(false)}>
+							<Button variant="outline" className="w-full cursor-pointer">
+								View gallery
+							</Button>
 						</Link>
-						<SignOut />
+						<SignOut fullWidth />
 					</nav>
-				</DialogContent>
+				</DrawerContent>
 				<div
 					className="quota-status mx-auto max-w-[720px] text-center text-xs text-[#568eae] [&_button]:mt-2 [&_p+p]:mt-2"
 					aria-live="polite"
@@ -158,9 +156,7 @@ export function Booth({ backgrounds: defaults }: { backgrounds: Backdrop[] }) {
 						</>
 					)}
 				</div>
-				<div
-					className={`booth-grid mx-auto grid max-w-none grid-cols-1 items-start gap-5 ${settingsVisible ? "min-[801px]:grid-cols-[minmax(0,1fr)_minmax(230px,280px)]" : "min-[801px]:grid-cols-1"} min-[801px]:gap-4 [@media(min-width:801px)_and_(min-height:600px)]:h-[calc(100dvh-24px)] [.capture-shell:has(.booth-preview.is-photo-mode)_&]:absolute [.capture-shell:has(.booth-preview.is-photo-mode)_&]:inset-0 [.capture-shell:has(.booth-preview.is-photo-mode)_&]:m-0 [.capture-shell:has(.booth-preview.is-photo-mode)_&]:block [.capture-shell:has(.booth-preview.is-photo-mode)_&]:h-full [.capture-shell:has(.booth-preview.is-photo-mode)_&]:w-full`}
-				>
+				<div className="booth-grid mx-auto grid max-w-none grid-cols-1 items-start gap-5 min-[801px]:gap-4 [@media(min-width:801px)_and_(min-height:600px)]:h-[calc(100dvh-24px)] [.capture-shell:has(.booth-preview.is-photo-mode)_&]:absolute [.capture-shell:has(.booth-preview.is-photo-mode)_&]:inset-0 [.capture-shell:has(.booth-preview.is-photo-mode)_&]:m-0 [.capture-shell:has(.booth-preview.is-photo-mode)_&]:block [.capture-shell:has(.booth-preview.is-photo-mode)_&]:h-full [.capture-shell:has(.booth-preview.is-photo-mode)_&]:w-full">
 					<BoothPreview
 						store={store}
 						backgrounds={backgrounds}
@@ -178,26 +174,15 @@ export function Booth({ backgrounds: defaults }: { backgrounds: Backdrop[] }) {
 						upload={uploadView}
 						canCapture={canCapture}
 						onPrepareSound={prepareSound}
-						settingsVisible={settingsVisible}
-						onToggleSettings={() =>
-							store.setState((state) => ({
-								settingsVisible: !state.settingsVisible,
-							}))
-						}
 						onConnect={(deviceId) => void connect(deviceId)}
-					/>
-					<BoothSettings
-						store={store}
-						onConnect={(deviceId) => void connect(deviceId)}
-						desktopVisible={settingsVisible}
 						menu={
-							<DialogTrigger render={<Button variant="outline" size="lg" />}>
+							<DrawerTrigger render={<Button variant="outline" size="lg" />}>
 								<Menu /> Menu
-							</DialogTrigger>
+							</DrawerTrigger>
 						}
 					/>
 				</div>
 			</main>
-		</Dialog>
+		</Drawer>
 	);
 }

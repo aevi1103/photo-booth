@@ -24,8 +24,6 @@ export const initialSettings: Settings = {
 
 export type BoothState = {
 	settings: Settings;
-	settingsOpen: boolean;
-	settingsVisible: boolean;
 	devices: MediaDeviceInfo[];
 	deviceId: string;
 	background: string;
@@ -44,11 +42,7 @@ export type BoothState = {
 
 type PersistedBoothState = Pick<
 	BoothState,
-	| "settings"
-	| "settingsVisible"
-	| "deviceId"
-	| "background"
-	| "backgroundChosen"
+	"settings" | "deviceId" | "background" | "backgroundChosen"
 >;
 
 export type BoothStore = ReturnType<typeof createBoothStore>;
@@ -58,8 +52,6 @@ export function createBoothStore(backgrounds: Backdrop[]) {
 		persist<BoothState, [], [], PersistedBoothState>(
 			() => ({
 				settings: initialSettings,
-				settingsOpen: false,
-				settingsVisible: true,
 				devices: [],
 				deviceId: "",
 				background: backgrounds[0]?.url ?? "",
@@ -80,7 +72,6 @@ export function createBoothStore(backgrounds: Backdrop[]) {
 				storage: createJSONStorage(() => localStorage),
 				partialize: (state) => ({
 					settings: state.settings,
-					settingsVisible: state.settingsVisible,
 					deviceId: state.deviceId,
 					background: state.background,
 					backgroundChosen: state.backgroundChosen,

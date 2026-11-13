@@ -1,8 +1,8 @@
-import { requireUser } from "@/lib/auth";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { isPhotoReservation } from "@/lib/photo-quota";
 import { appOrigin } from "@/lib/app-origin";
+import { requireUser } from "@/lib/auth";
 import { MAX_PHOTO_BYTES, PHOTO_SIZE_ERROR } from "@/lib/photo-limits";
+import { isPhotoQuota, isPhotoReservation } from "@/lib/photo-quota";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export async function GET(request: Request) {
   const auth = await requireUser();
@@ -96,4 +96,46 @@ export async function POST(request: Request) {
   const { error: recordError } = await client.from("photo_uploads").update({ status: "uploaded" }).eq("id", reservation.id);
   if (recordError) console.error("Photo was saved but its reservation status could not be updated:", recordError.message);
   return Response.json({ saved: true, quota: reservation.quota }, { headers: { "Cache-Control": "no-store" } });
+}
+
+export async function DELETE(request: Request) {
+  const auth = await requireUser();
+  if (auth.response) return auth.response;
+  const headers = { "Cache-Control": "private, no-store" };
+  const origin = request.headers.get("origin");
+  if (origin && origin !== appOrigin(request)) {
+    return Response.json({ error: "Invalid photo deletion origin." }, { status: 403, headers });
+  }
+
+  const name = new URL(request.url).searchParams.get("name");
+  const pathParts = name?.split("/") ?? [];
+  if (
+    !name ||
+    name.length > 1024 ||
+    name.includes("\\") ||
+    name.split("").some((character) => character < " " || character === "\u007f") ||
+    pathParts.some((part) => !part || part === "." || part === "..") ||
+    !/\.(jpe?g|png|webp)$/i.test(name)
+  ) {
+    return Response.json({ error: "Invalid photo name." }, { status: 400, headers });
+  }
+
+  const client = createAdminClient();
+  const { data: quota, error: roleError } = await client.rpc("get_photo_quota", {
+    p_user_id: auth.user.id,
+  });
+  if (roleError || !isPhotoQuota(quota)) {
+    console.error("Photo deletion role lookup failed:", roleError?.message ?? "Invalid booth profile.");
+    return Response.json({ error: "Could not verify photo access. Please retry." }, { status: 503, headers });
+  }
+  if (quota.role !== "admin" && pathParts[0] !== auth.user.id) {
+    return Response.json({ error: "Photo not found." }, { status: 404, headers });
+  }
+
+  const { error } = await client.storage.from("photos").remove([name]);
+  if (error) {
+    console.error("Photo deletion failed:", error.message);
+    return Response.json({ error: "Could not delete photo. Please retry." }, { status: 503, headers });
+  }
+  return Response.json({ deleted: true }, { headers });
 }

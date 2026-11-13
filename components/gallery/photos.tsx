@@ -1,10 +1,27 @@
 "use client";
 
 import Image from "next/image";
+import { useState } from "react";
 import type { GalleryState } from "@/components/gallery/use-gallery";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+	Dialog,
+	DialogClose,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
+import { useDeletePhoto } from "@/lib/queries/photos";
 
 export function GalleryPhotos({ gallery }: { gallery: GalleryState }) {
+	const [photosToDelete, setPhotosToDelete] = useState<string[]>([]);
+	const [selectedNames, setSelectedNames] = useState<ReadonlySet<string>>(
+		new Set(),
+	);
+	const deletion = useDeletePhoto();
 	const {
 		photos,
 		isPending,
@@ -21,9 +38,15 @@ export function GalleryPhotos({ gallery }: { gallery: GalleryState }) {
 		failedUrls,
 		markImageFailed,
 	} = gallery;
+	const selectedPhotos = photos
+		.filter((photo) => selectedNames.has(photo.name))
+		.map((photo) => photo.name);
 
 	return (
-		<section className="rounded-[18px] border border-[#e6f0f5] bg-white p-5 shadow-[0_10px_35px_#8daec314]" aria-label="Saved photos">
+		<section
+			className="rounded-[18px] border border-[#e6f0f5] bg-white p-5 shadow-[0_10px_35px_#8daec314]"
+			aria-label="Saved photos"
+		>
 			<div className="flex flex-wrap items-center justify-between gap-3 mb-5">
 				<div>
 					<p role="status">
@@ -39,19 +62,35 @@ export function GalleryPhotos({ gallery }: { gallery: GalleryState }) {
 						</p>
 					)}
 				</div>
-				<div className="flex gap-2">
+				<div className="flex flex-wrap gap-2">
+					<Button
+						variant="destructive"
+						disabled={!selectedPhotos.length || deletion.isPending}
+						onClick={() => {
+							deletion.reset();
+							setPhotosToDelete(selectedPhotos);
+						}}
+					>
+						Delete selected ({selectedPhotos.length})
+					</Button>
 					<Button variant="outline" disabled={isFetching} onClick={refresh}>
 						Refresh photos
 					</Button>
 				</div>
 			</div>
 			{loadError && (
-				<p className="mt-3.5 rounded-[9px] bg-[#fff1ed] p-[11px] text-[13px] text-[#934b43]" role="alert">
+				<p
+					className="mt-3.5 rounded-[9px] bg-[#fff1ed] p-[11px] text-[13px] text-[#934b43]"
+					role="alert"
+				>
 					{loadError.message}
 				</p>
 			)}
 			{staleError && (
-				<p className="mt-3.5 rounded-[9px] bg-[#fff1ed] p-[11px] text-[13px] text-[#934b43]" role="alert">
+				<p
+					className="mt-3.5 rounded-[9px] bg-[#fff1ed] p-[11px] text-[13px] text-[#934b43]"
+					role="alert"
+				>
 					{staleError.message} Showing previously loaded photos.
 				</p>
 			)}
@@ -66,6 +105,26 @@ export function GalleryPhotos({ gallery }: { gallery: GalleryState }) {
 						key={photo.name}
 						className="gallery-photo overflow-hidden rounded-xl border bg-white"
 					>
+						<label
+							htmlFor={`select-${encodeURIComponent(photo.name)}`}
+							className="flex items-center gap-2 p-3 text-sm"
+						>
+							<Checkbox
+								id={`select-${encodeURIComponent(photo.name)}`}
+								aria-label={`Select photo ${photo.name}`}
+								checked={selectedNames.has(photo.name)}
+								disabled={deletion.isPending}
+								onCheckedChange={(checked) => {
+									setSelectedNames((previous) => {
+										const next = new Set(previous);
+										if (checked) next.add(photo.name);
+										else next.delete(photo.name);
+										return next;
+									});
+								}}
+							/>
+							Select photo
+						</label>
 						<a
 							href={photo.url}
 							target="_blank"
@@ -86,7 +145,22 @@ export function GalleryPhotos({ gallery }: { gallery: GalleryState }) {
 							/>
 						</a>
 						<figcaption className="p-3 text-sm text-[#6b8c9d]">
-							{new Date(photo.createdAt).toLocaleString()}
+							<div className="flex items-center justify-between gap-3">
+								<time dateTime={photo.createdAt}>
+									{new Date(photo.createdAt).toLocaleString()}
+								</time>
+								<Button
+									variant="destructive"
+									size="sm"
+									disabled={deletion.isPending}
+									onClick={() => {
+										deletion.reset();
+										setPhotosToDelete([photo.name]);
+									}}
+								>
+									Delete
+								</Button>
+							</div>
 							{failedUrls.has(photo.url) && (
 								<p className="text-[#934b43]" role="alert">
 									Image unavailable or link expired. Refresh photos to retry.
@@ -96,6 +170,65 @@ export function GalleryPhotos({ gallery }: { gallery: GalleryState }) {
 					</figure>
 				))}
 			</div>
+			<Dialog
+				open={photosToDelete.length > 0}
+				onOpenChange={(open) => {
+					if (!open && !deletion.isPending) setPhotosToDelete([]);
+				}}
+			>
+				<DialogContent showCloseButton={!deletion.isPending}>
+					<DialogHeader>
+						<DialogTitle>
+							{photosToDelete.length > 1
+								? `Delete ${photosToDelete.length} selected photos?`
+								: "Delete this photo?"}
+						</DialogTitle>
+						<DialogDescription>
+							{photosToDelete.length > 1
+								? "This permanently removes the selected photos and does not restore your upload allowance."
+								: "This permanently removes the photo and does not restore your upload allowance."}
+						</DialogDescription>
+					</DialogHeader>
+					{deletion.error && (
+						<p className="text-[#934b43]" role="alert">
+							{deletion.error.message}
+						</p>
+					)}
+					<DialogFooter>
+						<DialogClose
+							disabled={deletion.isPending}
+							render={<Button variant="outline" />}
+						>
+							Cancel
+						</DialogClose>
+						<Button
+							variant="destructive"
+							disabled={deletion.isPending}
+							onClick={() => {
+								deletion.mutate(photosToDelete, {
+									onSuccess: () => {
+										setSelectedNames(
+											(previous) =>
+												new Set(
+													[...previous].filter(
+														(name) => !photosToDelete.includes(name),
+													),
+												),
+										);
+										setPhotosToDelete([]);
+									},
+								});
+							}}
+						>
+							{deletion.isPending
+								? "Deleting…"
+								: photosToDelete.length > 1
+									? "Delete selected photos"
+									: "Delete photo"}
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
 			<div className="mt-5 text-center">
 				{isFetchingNextPage && <p role="status">Loading more photos...</p>}
 				{hasNextPage && (

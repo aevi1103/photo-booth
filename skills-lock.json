@@ -1,53 +1,71 @@
 {
-  "version": 1,
+  "version": 2,
   "skills": {
+    "migrate-radix-to-base": {
+      "source": "shadcn-ui/ui",
+      "sourceType": "github",
+      "skillPath": "skills/migrate-radix-to-base/SKILL.md",
+      "computedHash": "7644de21e9aa533904def58c30f809ae6574c3cabc6396ab8b03dee751e8ffbe"
+    },
     "next-bundle-optimizer": {
       "source": "vercel/next.js",
       "sourceType": "github",
       "skillPath": "skills/next-bundle-optimizer/SKILL.md",
-      "computedHash": "7c37f80887cf574e146b88d42cf7d8e847a96ac4cbd1a499672213a30a5ba8f5"
+      "computedHash": "2a2d38e9ba5476f6eef7a86cc1531801b454fdcd5ee8b96745973e01b5d25397"
     },
     "next-cache-components-adoption": {
       "source": "vercel/next.js",
       "sourceType": "github",
       "skillPath": "skills/next-cache-components-adoption/SKILL.md",
-      "computedHash": "38eb3cb9e625b46b54493459a106ac410bc0fe59b124903d55f5090c959d292f"
+      "computedHash": "2bf109a8693bb67ba45e05a531021bda876fafe048e764ffffe1bb1c460ec286"
     },
     "next-cache-components-optimizer": {
       "source": "vercel/next.js",
       "sourceType": "github",
       "skillPath": "skills/next-cache-components-optimizer/SKILL.md",
-      "computedHash": "4da335ed6dcf4892f39ae148a5818df7564afffd216d4f913df9b9cfa8049219"
+      "computedHash": "88f1a9480dbb67bca44060e50fc45559d1bd70c2e7e766a44d015568634a9868"
     },
     "next-dev-loop": {
       "source": "vercel/next.js",
       "sourceType": "github",
       "skillPath": "skills/next-dev-loop/SKILL.md",
-      "computedHash": "68e70a9270eb02cc9c63cb19ce5106772ce4c140242199f4d90c77f6acb56355"
+      "computedHash": "abe7b5e77b26f95ab21304b10ce1003a41e4e75b601505d76c8a0294e33a450d"
     },
     "next-partial-prefetching-adoption": {
       "source": "vercel/next.js",
       "sourceType": "github",
       "skillPath": "skills/next-partial-prefetching-adoption/SKILL.md",
-      "computedHash": "0cd9d8fa2c724b5e08f3f7482009a25bd4259ee6971b21809f3a6ff64ffd93bb"
+      "computedHash": "a9ac6534a71de4bc7a43b84fbaa42e1ddeb091fe8db71c9c97038d949df22e0f"
     },
     "next-partial-prefetching-optimizer": {
       "source": "vercel/next.js",
       "sourceType": "github",
       "skillPath": "skills/next-partial-prefetching-optimizer/SKILL.md",
-      "computedHash": "375524a581dd70fa1e595699b82f4a554cf2c1c25833efd32fbeabfdb24d5719"
+      "computedHash": "6f8bc71150496e962da7bd0615640e8c866e50a913d0c801294dc46e38f5fae1"
+    },
+    "shadcn": {
+      "source": "shadcn-ui/ui",
+      "sourceType": "github",
+      "skillPath": "skills/shadcn/SKILL.md",
+      "computedHash": "388962d16c7a4f13aaeee0d8f128e50a87df8553d42ef7988c39c0e1c74a40e8"
     },
     "supabase": {
       "source": "supabase/agent-skills",
       "sourceType": "github",
       "skillPath": "skills/supabase/SKILL.md",
-      "computedHash": "211141fd078b4b3645803868528d54221bc7755d24d5c8af45a366785c151dba"
+      "computedHash": "2fbff32fd63b7d31585cacf0ed43e5bf8d05dd20d6c0c751d256cb967a00eec1"
     },
     "supabase-postgres-best-practices": {
       "source": "supabase/agent-skills",
       "sourceType": "github",
       "skillPath": "skills/supabase-postgres-best-practices/SKILL.md",
-      "computedHash": "e14e276241805c97dbcfe40dcbea1a3035269cc7293cac4b1832dda41a835e60"
+      "computedHash": "3eb972c2d7c818e544e35cc33ea8d7147d4d78ae08142ef40037b0fbac7a2505"
+    },
+    "tailwind-design-system": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "skillPath": "plugins/frontend-mobile-development/skills/tailwind-design-system/SKILL.md",
+      "computedHash": "c807f0c9619e8c389879f55846c2e395956f1073ab6d01a93fbb30b340015ab1"
     }
   }
 }

@@ -19,6 +19,7 @@ test("anonymous users must sign in before booth, gallery, quota, and uploads", a
     for (const path of ["/api/photos", "/api/account", "/api/backdrops"]) {
       expect((await anonymous.get(path)).status()).toBe(401);
     }
+    expect((await anonymous.delete(`/api/photos?name=${userId}/photo.jpg`)).status()).toBe(401);
     expect((await anonymous.post("/api/photos", { ...upload, headers: { ...upload.headers, "x-booth-code": "old-code" } })).status()).toBe(401);
     expect((await anonymous.post("/api/backdrops", upload)).status()).toBe(401);
     expect((await anonymous.patch("/api/backdrops", { data: { file: "backdrop.jpg", hidden: true } })).status()).toBe(401);
@@ -135,6 +136,107 @@ test("gallery isolates users while admins can view all including legacy photos",
   try {
     expect((await (await admin.get("/api/photos")).json()).photos).toHaveLength(3);
   } finally { await admin.dispose(); }
+});
+
+test("photo deletion is owner/admin scoped and does not restore upload quota", async ({ request, backend, playwright }) => {
+  expect((await request.post("/api/photos", upload)).status()).toBe(200);
+  const ownName = (await (await request.get("/api/photos")).json()).photos[0].name as string;
+  const otherName = `${otherId}/other.jpg`;
+  await backend.db.query("insert into storage.objects(bucket_id, name) values ('photos', $1)", [otherName]);
+  backend.objects.set(otherName, jpeg);
+
+  expect((await request.delete(`/api/photos?name=${encodeURIComponent(ownName)}`, { headers: { origin: "https://example.com" } })).status()).toBe(403);
+  expect((await request.delete(`/api/photos?name=${encodeURIComponent(`${userId}/../${otherName}`)}`)).status()).toBe(400);
+  expect((await request.delete(`/api/photos?name=${encodeURIComponent(otherName)}`)).status()).toBe(404);
+  expect(backend.objects.has(otherName)).toBe(true);
+
+  const deleted = await request.delete(`/api/photos?name=${encodeURIComponent(ownName)}`);
+  expect(deleted.status()).toBe(200);
+  expect(await deleted.json()).toEqual({ deleted: true });
+  expect(backend.objects.has(ownName)).toBe(false);
+  expect(await (await request.get("/api/account")).json()).toMatchObject({ quota: { used: 1 } });
+
+  const admin = await playwright.request.newContext({ baseURL: "http://127.0.0.1:3210", storageState: { cookies: [sessionCookie(adminId)], origins: [] } });
+  try {
+    backend.storageError = 503;
+    expect((await admin.delete(`/api/photos?name=${encodeURIComponent(otherName)}`)).status()).toBe(503);
+    expect(backend.objects.has(otherName)).toBe(true);
+    backend.storageError = null;
+    expect((await admin.delete(`/api/photos?name=${encodeURIComponent(otherName)}`)).status()).toBe(200);
+    expect(backend.objects.has(otherName)).toBe(false);
+  } finally { await admin.dispose(); }
+});
+
+test("gallery confirms photo deletion and removes it after success", async ({ page, backend }) => {
+  const name = `${userId}/gallery-delete.jpg`;
+  await backend.db.query("insert into storage.objects(bucket_id, name) values ('photos', $1)", [name]);
+  backend.objects.set(name, jpeg);
+
+  await page.goto("/gallery");
+  await expect(page.getByRole("button", { name: "Delete", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Delete this photo?" });
+  await expect(dialog).toContainText("does not restore your upload allowance");
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByRole("button", { name: "Delete", exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await page.getByRole("dialog", { name: "Delete this photo?" }).getByRole("button", { name: "Delete photo" }).click();
+  await expect(page.getByRole("dialog", { name: "Delete this photo?" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Delete", exact: true })).toHaveCount(0);
+  expect(backend.objects.has(name)).toBe(false);
+});
+
+test("gallery deletes only checked photos after confirmation", async ({ page, backend }) => {
+  const names = [1, 2, 3].map((number) => `${userId}/selected-${number}.jpg`);
+  for (const name of names) {
+    await backend.db.query("insert into storage.objects(bucket_id, name) values ('photos', $1)", [name]);
+    backend.objects.set(name, jpeg);
+  }
+  await page.goto("/gallery");
+  await expect(page.getByRole("checkbox")).toHaveCount(3);
+  await expect(page.getByRole("button", { name: "Delete selected (0)", exact: true })).toBeDisabled();
+  for (const name of names) await page.getByRole("checkbox", { name: `Select photo ${name}`, exact: true }).check();
+  await page.getByRole("checkbox", { name: `Select photo ${names[2]}`, exact: true }).uncheck();
+  await page.getByRole("button", { name: "Delete selected (2)", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Delete 2 selected photos?" });
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  expect(backend.objects.size).toBe(3);
+  await page.getByRole("button", { name: "Delete selected (2)", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete selected photos", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("checkbox")).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Delete selected (0)", exact: true })).toBeDisabled();
+  expect([...backend.objects.keys()]).toEqual([names[2]]);
+});
+
+test("gallery reports partial deletion failures and retries remaining checked photos", async ({ page, backend }) => {
+  const names = [1, 2].map((number) => `${userId}/retry-${number}.jpg`);
+  for (const name of names) {
+    await backend.db.query("insert into storage.objects(bucket_id, name) values ('photos', $1)", [name]);
+    backend.objects.set(name, jpeg);
+  }
+  let fail = true;
+  await page.route("**/api/photos?name=*", async (route) => {
+    if (fail && new URL(route.request().url()).searchParams.get("name") === names[1]) {
+      await route.fulfill({ status: 503, json: { error: "Could not delete photo. Please retry." } });
+    } else await route.continue();
+  });
+  await page.goto("/gallery");
+  for (const name of names) await page.getByRole("checkbox", { name: `Select photo ${name}`, exact: true }).check();
+  await page.getByRole("button", { name: "Delete selected (2)", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete selected photos", exact: true }).click();
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText("1 of 2 photos could not be deleted");
+  await expect(page.getByRole("dialog").getByRole("button", { name: "Cancel" })).toBeEnabled();
+  await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByRole("checkbox")).toHaveCount(1);
+  expect([...backend.objects.keys()]).toEqual([names[1]]);
+  fail = false;
+  await page.getByRole("button", { name: "Delete selected (1)", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete photo", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("checkbox")).toHaveCount(0);
+  expect(backend.objects.size).toBe(0);
 });
 
 test("database migration is rerunnable, preserves admin roles and denies direct Storage bypass", async ({ backend }) => {

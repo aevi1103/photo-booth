@@ -3,6 +3,14 @@
 import { useStore } from "zustand";
 import type { BoothStore } from "@/components/booth/store/store";
 import { Button } from "@/components/ui/button";
+import {
+	Combobox,
+	ComboboxContent,
+	ComboboxEmpty,
+	ComboboxInput,
+	ComboboxItem,
+	ComboboxList,
+} from "@/components/ui/combobox";
 
 export function CameraControls({
 	store,
@@ -18,6 +26,18 @@ export function CameraControls({
 	accessibleName?: string;
 }) {
 	const { devices, deviceId, connecting, countdown, photo } = useStore(store);
+	const disabled = connecting || countdown !== null || photo !== null;
+	const cameraOptions = [
+		{ value: "", label: "Default camera" },
+		{ value: "facing:user", label: "Front camera (selfie)" },
+		{ value: "facing:environment", label: "Rear camera" },
+		...devices
+			.filter((device) => device.deviceId)
+			.map((device, index) => ({
+				value: device.deviceId,
+				label: device.label || `Camera ${index + 1}`,
+			})),
+	];
 
 	return (
 		<div className={className}>
@@ -25,30 +45,36 @@ export function CameraControls({
 				<label className="sr-only" htmlFor={id}>
 					CAMERA
 				</label>
-				<select
-					id={id}
-					aria-label={accessibleName}
-					className="w-full min-w-0 rounded-lg border border-[#dcebf2] bg-[#fbfdff] p-2.5 text-[13px] text-[#416a80]"
+				<Combobox
 					value={deviceId}
-					disabled={connecting || countdown !== null || photo !== null}
-					onChange={(event) => store.setState({ deviceId: event.target.value })}
+					itemToStringLabel={(value) =>
+						cameraOptions.find((option) => option.value === value)?.label ??
+						value
+					}
+					onValueChange={(value) => store.setState({ deviceId: value ?? "" })}
+					disabled={disabled}
 				>
-					<option value="">Default camera</option>
-					<option value="facing:user">Front camera (selfie)</option>
-					<option value="facing:environment">Rear camera</option>
-					{devices
-						.filter((device) => device.deviceId)
-						.map((device, index) => (
-							<option key={device.deviceId} value={device.deviceId}>
-								{device.label || `Camera ${index + 1}`}
-							</option>
-						))}
-				</select>
+					<ComboboxInput
+						id={id}
+						aria-label={accessibleName}
+						disabled={disabled}
+						placeholder="Select a camera..."
+					/>
+					<ComboboxContent>
+						<ComboboxEmpty>No cameras found.</ComboboxEmpty>
+						<ComboboxList>
+							{cameraOptions.map(({ value, label }) => (
+								<ComboboxItem key={value || "default"} value={value}>
+									{label}
+								</ComboboxItem>
+							))}
+						</ComboboxList>
+					</ComboboxContent>
+				</Combobox>
 			</div>
 			<Button
-				className="min-h-[38px]"
 				variant="outline"
-				disabled={connecting || countdown !== null || photo !== null}
+				disabled={disabled}
 				onClick={() => onConnect(deviceId)}
 			>
 				{connecting ? "Connecting..." : "Connect"}

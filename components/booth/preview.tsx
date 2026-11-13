@@ -7,13 +7,17 @@ import {
 	Maximize2,
 	Mic,
 	MicOff,
-	PanelRightClose,
-	PanelRightOpen,
 	RefreshCw,
 	X,
 } from "lucide-react";
 import Image from "next/image";
-import { type CSSProperties, useCallback, useEffect, useState } from "react";
+import {
+	type CSSProperties,
+	type ReactNode,
+	useCallback,
+	useEffect,
+	useState,
+} from "react";
 import Webcam from "react-webcam";
 import { useStore } from "zustand";
 import { BackdropCarousel } from "@/components/booth/backdrop-carousel";
@@ -24,6 +28,7 @@ import type { Backdrop, BoothStore } from "@/components/booth/store/store";
 import { Button, buttonVariants } from "@/components/ui/button";
 import type { useBoothSounds } from "@/lib/use-booth-sounds";
 import type { useVoiceTrigger } from "@/lib/use-voice-trigger";
+import { Badge } from "../ui/badge";
 
 type Props = {
 	store: BoothStore;
@@ -40,9 +45,8 @@ type Props = {
 	upload: UploadView;
 	canCapture: boolean;
 	onPrepareSound: () => void;
-	settingsVisible: boolean;
-	onToggleSettings: () => void;
 	onConnect: (deviceId: string) => void;
+	menu: ReactNode;
 };
 
 export function BoothPreview({
@@ -60,9 +64,8 @@ export function BoothPreview({
 	upload,
 	canCapture,
 	onPrepareSound,
-	settingsVisible,
-	onToggleSettings,
 	onConnect,
+	menu,
 }: Props) {
 	const {
 		connected,
@@ -118,7 +121,12 @@ export function BoothPreview({
 
 	return (
 		<section
-			className={`preview-card booth-preview min-w-0 border-0 bg-transparent p-0 [box-shadow:none] ${isPhotoMode ? "is-photo-mode absolute inset-0 z-[1] block h-full w-full" : "[@media(min-width:801px)_and_(min-height:600px)]:flex [@media(min-width:801px)_and_(min-height:600px)]:h-full [@media(min-width:801px)_and_(min-height:600px)]:flex-col [@media(min-width:801px)_and_(min-height:600px)]:overflow-y-auto [@media(min-width:801px)_and_(min-height:600px)]:[&>*]:shrink-0"}`}
+			className={`preview-card booth-preview min-w-0 border-0 bg-transparent p-0
+				 [box-shadow:none] ${
+						isPhotoMode
+							? "is-photo-mode absolute inset-0 z-1 block h-full w-full"
+							: "[@media(min-width:801px)_and_(min-height:600px)]:flex [@media(min-width:801px)_and_(min-height:600px)]:h-full [@media(min-width:801px)_and_(min-height:600px)]:flex-col [@media(min-width:801px)_and_(min-height:600px)]:overflow-y-auto [@media(min-width:801px)_and_(min-height:600px)]:*:shrink-0"
+					}`}
 		>
 			<div
 				className={
@@ -128,57 +136,52 @@ export function BoothPreview({
 				}
 			>
 				<div
-					className={`preview-stage ${isPhotoMode ? "" : "[@media(min-width:801px)_and_(min-height:600px)]:grid [@media(min-width:801px)_and_(min-height:600px)]:min-h-[160px] [@media(min-width:801px)_and_(min-height:600px)]:min-w-0 [@media(min-width:801px)_and_(min-height:600px)]:flex-[1_1_0] [@media(min-width:801px)_and_(min-height:600px)]:place-items-center [@media(min-width:801px)_and_(min-height:600px)]:[container-type:size]"}`}
+					className={`preview-stage ${
+						isPhotoMode
+							? ""
+							: "[@media(min-width:801px)_and_(min-height:600px)]:grid [@media(min-width:801px)_and_(min-height:600px)]:min-h-40 [@media(min-width:801px)_and_(min-height:600px)]:min-w-0 [@media(min-width:801px)_and_(min-height:600px)]:flex-[1_1_0] [@media(min-width:801px)_and_(min-height:600px)]:place-items-center [@media(min-width:801px)_and_(min-height:600px)]:@container-size"
+					}`}
 					style={frameStyle}
 				>
 					<div
-						className={`preview-frame ${isPhotoMode ? "" : "[@media(min-width:801px)_and_(min-height:600px)]:w-[min(100cqw,calc((100cqh_-_80px)*var(--frame-aspect)))]"}`}
+						className={`preview-frame ${isPhotoMode ? "" : "[@media(min-width:801px)_and_(min-height:600px)]:w-[min(100cqw,calc((100cqh-80px)*var(--frame-aspect)))]"}`}
 					>
 						<div
-							className={`preview-heading mb-[18px] flex items-center justify-between gap-[15px] min-[801px]:mb-2.5 [@media(min-width:801px)_and_(min-height:600px)]:flex-wrap ${isPhotoMode ? "hidden" : ""}`}
+							className={`preview-heading mb-4.5 flex flex-wrap items-center justify-between gap-3.75 min-[801px]:mb-2.5 [@media(min-width:801px)_and_(min-height:600px)]:flex-wrap ${isPhotoMode ? "hidden" : ""}`}
 						>
-							<div>
-								<h2 className="text-[16px] font-bold text-[#365e74]">
-									Your photo booth
-								</h2>
-								<p className="mt-[5px] text-xs text-[#89a1af]">
+							<div className="flex flex-col">
+								<div className="flex items-center gap-2">
+									<Cloud size={16} className="text-blue-500" />
+									<h2 className="text-lg">Baby Nugget Photo Booth</h2>
+									<Badge
+										className={`${connected ? "bg-green-100 text-green-800" : ""} h-full`}
+									>
+										{connected ? "LIVE" : "OFFLINE"}
+									</Badge>
+								</div>
+
+								<p className="mt-1.25 text-xs text-[#89a1af]">
 									{connected
 										? `Camera connected · ${resolution}`
 										: "Connect a camera to get started"}
 								</p>
 							</div>
-							<div className="flex flex-wrap items-center justify-end gap-2">
+							<div className="flex w-full flex-wrap items-center justify-end gap-2 min-[801px]:w-auto">
 								<CameraControls
 									store={store}
 									onConnect={onConnect}
 									id="toolbar-camera"
 									accessibleName="Camera device"
-									className="hidden w-[250px] min-w-[220px] items-center gap-[7px] min-[801px]:flex"
+									className="flex w-full min-w-0 items-center gap-1.75 min-[801px]:w-62.5 min-[801px]:min-w-55"
 								/>
 								<Button
-									className="min-h-[34px] border-[#dceaf2] bg-white px-2.5 text-[#558eae] hover:!bg-[#e8f5fb] hover:!text-[#345d76] [&_svg]:size-[15px]"
 									variant="outline"
 									disabled={!connected || photo !== null}
 									onClick={enterPhotoMode}
 								>
 									<Maximize2 /> Photo mode
 								</Button>
-								<Button
-									className="hidden min-h-[34px] border-[#dceaf2] bg-white px-2.5 text-[#558eae] hover:!bg-[#e8f5fb] hover:!text-[#345d76] min-[801px]:inline-flex [&_svg]:size-[15px]"
-									variant="outline"
-									type="button"
-									aria-expanded={settingsVisible}
-									aria-controls="booth-settings-panel"
-									onClick={onToggleSettings}
-								>
-									{settingsVisible ? <PanelRightClose /> : <PanelRightOpen />}
-									{settingsVisible ? "Hide settings" : "Show settings"}
-								</Button>
-								<span
-									className={`rounded-[20px] px-[9px] py-[5px] text-[10px] font-bold tracking-[.1em] ${connected ? "bg-[#e8f6ee] text-[#529578]" : "bg-[#eff5f8] text-[#90a5b1]"}`}
-								>
-									{connected ? "LIVE" : "OFFLINE"}
-								</span>
+								{menu}
 							</div>
 						</div>
 						<div
@@ -195,10 +198,10 @@ export function BoothPreview({
 									ref={attachWebcam}
 									audio={false}
 									videoConstraints={session.constraints}
-									onUserMedia={(stream) => {
+									onUserMedia={(stream: MediaStream) => {
 										void onUserMedia(session, stream);
 									}}
-									onUserMediaError={(error) => {
+									onUserMediaError={(error: unknown) => {
 										onError(session.id, error);
 									}}
 									className="pointer-events-none absolute size-px opacity-0"
@@ -258,8 +261,8 @@ export function BoothPreview({
 					role="status"
 				>
 					The camera can&apos;t see the green key color, so green areas
-					won&apos;t be replaced. Stand in front of a green screen, or adjust
-					the key color under Green screen settings.
+					won&apos;t be replaced. Stand in front of a green screen that matches
+					the saved key color.
 				</p>
 			)}
 			{backdropError && (
@@ -293,18 +296,17 @@ export function BoothPreview({
 			)}
 			{sounds.error && (
 				<p
-					className="mt-3.5 rounded-[9px] bg-[#fff1ed] p-[11px] text-[13px] text-[#934b43]"
+					className="mt-3.5 rounded-[9px] bg-[#fff1ed] p-2.75 text-[13px] text-[#934b43]"
 					role="alert"
 				>
 					{sounds.error}
 				</p>
 			)}
 			<div
-				className={`actions mt-5 flex flex-wrap justify-center gap-2.5 min-[801px]:mt-3 [&_a]:min-h-[46px] [&_a]:rounded-[10px] [&_a]:px-[clamp(8px,2vw,23px)] [&_[data-slot=button]]:min-h-[46px] [&_[data-slot=button]]:rounded-[10px] [&_[data-slot=button]]:px-[clamp(8px,2vw,23px)] ${isPhotoMode ? "absolute right-3 bottom-[max(20px,env(safe-area-inset-bottom))] left-3 z-[2] !m-0" : ""}`}
+				className={`actions mt-5 flex flex-wrap justify-center gap-2.5 min-[801px]:mt-3 [&_a]:min-h-11.5 [&_a]:rounded-[10px] [&_a]:px-[clamp(8px,2vw,23px)] [&_[data-slot=button]]:min-h-[46px] [&_[data-slot=button]]:rounded-[10px] [&_[data-slot=button]]:px-[clamp(8px,2vw,23px)] ${isPhotoMode ? "absolute right-3 bottom-[max(20px,env(safe-area-inset-bottom))] left-3 z-[2] !m-0" : ""}`}
 			>
 				{!photo ? (
 					<Button
-						className="border-[#568eae] bg-[#568eae] font-semibold text-white shadow-[0_4px_12px_#568eae30] hover:border-[#417b9b] hover:bg-[#417b9b]"
 						size="lg"
 						disabled={
 							!connected || !frameReady || !canCapture || countdown !== null
@@ -322,6 +324,7 @@ export function BoothPreview({
 								setPhotoMode(false);
 								onRetake();
 							}}
+							className="cursor-pointer"
 						>
 							<RefreshCw /> Retake
 						</Button>
@@ -337,10 +340,10 @@ export function BoothPreview({
 					</>
 				)}
 				<Button
-					className={`border border-dashed border-[#afc8d6] bg-[#f0f7fb] text-[#648193] shadow-none hover:bg-[#e4f0f7] hover:text-[#345d76] ${voice.status === "off" ? "" : "border-solid border-[#82bda0] bg-[#e5f4ed] text-[#38795c] shadow-[0_0_0_3px_#82bda01a] hover:bg-[#d7eddf] hover:text-[#345d76]"}`}
-					variant="outline"
+					variant={"outline"}
 					size="lg"
 					type="button"
+					className="cursor-pointer"
 					aria-pressed={voice.status !== "off"}
 					aria-describedby="voice-disclosure"
 					title="Say capture to start the countdown. Microphone audio may be sent to your browser's speech service."

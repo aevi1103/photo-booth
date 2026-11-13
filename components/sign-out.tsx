@@ -1,5 +1,15 @@
-import { buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 
-export function SignOut() {
-  return <form action="/auth/logout" method="post"><button type="submit" className={buttonVariants({ variant: "outline", className: "booth-navigation border-[#dceaf2] font-[inherit] text-[#558eae] hover:bg-[#e8f5fb] hover:text-[#345d76]" })}>Sign out</button></form>;
+export function SignOut({ fullWidth }: { fullWidth?: boolean }) {
+	return (
+		<form action="/auth/logout" method="post">
+			<Button
+				type="submit"
+				variant="outline"
+				className={`cursor-pointer ${fullWidth ? "w-full" : ""}`}
+			>
+				Sign out
+			</Button>
+		</form>
+	);
 }

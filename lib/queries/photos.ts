@@ -97,6 +97,33 @@ export function useRefreshGallery() {
 	}, [queryClient]);
 }
 
+async function deletePhoto(name: string): Promise<void> {
+	const body = await requestJson(
+		`/api/photos?name=${encodeURIComponent(name)}`,
+		"Could not delete photo.",
+		{ method: "DELETE" },
+	);
+	if (!isRecord(body) || body.deleted !== true)
+		throw new Error("The server did not confirm that the photo was deleted.");
+}
+
+export function useDeletePhoto() {
+	const refresh = useRefreshGallery();
+	return useMutation({
+		mutationFn: async (names: string[]) => {
+			const results = await Promise.allSettled(names.map(deletePhoto));
+			const failures = results.filter((result) => result.status === "rejected");
+			if (failures.length) {
+				if (names.length === 1) throw failures[0].reason;
+				throw new Error(
+					`${failures.length} of ${names.length} photos could not be deleted. Please retry the remaining photos.`,
+				);
+			}
+		},
+		onSettled: () => refresh(),
+	});
+}
+
 async function uploadPhoto(blob: Blob): Promise<{ quota?: PhotoQuota }> {
 	if (blob.size > MAX_PHOTO_BYTES) throw new Error(PHOTO_SIZE_ERROR);
 	const body = await requestJson("/api/photos", "Could not save photo.", {
