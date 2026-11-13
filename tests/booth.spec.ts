@@ -2,6 +2,31 @@ import { readFile } from "node:fs/promises";
 import type { Page } from "@playwright/test";
 import { adminId, expect, sessionCookie, test } from "./fixtures";
 
+async function mockSavedCapture(page: Page) {
+	let uploaded: Buffer | null = null;
+	await page.route("**/api/photos?offset=*", (route) =>
+		route.fulfill({
+			json: {
+				photos: uploaded
+					? [
+							{
+								name: "captured.jpg",
+								createdAt: new Date().toISOString(),
+								url: `data:image/jpeg;base64,${uploaded.toString("base64")}`,
+							},
+						]
+					: [],
+				nextOffset: null,
+			},
+		}),
+	);
+	await page.route("**/api/photos", (route) => {
+		uploaded = route.request().postDataBuffer();
+		return route.fulfill({ json: { saved: true } });
+	});
+	return () => uploaded;
+}
+
 async function mockFrame(
 	page: Page,
 	width: number,
@@ -53,7 +78,7 @@ async function mockFrame(
 async function compositionMatches(
 	page: Page,
 	opening: { x: number; y: number; width: number; height: number },
-	mirror = false,
+	mirror = true,
 	captured = false,
 ) {
 	return page.evaluate(
@@ -91,16 +116,15 @@ async function compositionMatches(
 			);
 			context.restore();
 			const frame = new Image();
-			frame.src = document
-				.querySelector(".background-option.selected img")!
-				.getAttribute("src")!;
+			frame.src = "/frames/baby-shower.png";
 			await frame.decode();
 			context.drawImage(frame, 0, 0);
 			const actual = document.createElement("canvas");
 			actual.width = source.width;
 			actual.height = source.height;
 			const actualContext = actual.getContext("2d")!;
-			const photo = document.querySelector<HTMLImageElement>(".preview img");
+			const photo =
+				document.querySelector<HTMLImageElement>(".gallery-photo img");
 			if (captured && (!photo || !photo.complete)) return false;
 			actualContext.drawImage(captured ? photo! : source, 0, 0);
 			const points = [
@@ -295,9 +319,7 @@ for (const viewport of [
 				return stream;
 			};
 		});
-		await page.route("**/api/photos", (route) =>
-			route.fulfill({ json: { saved: true } }),
-		);
+		await mockSavedCapture(page);
 		await page.goto("/");
 		// Quota text renders client-side, so it guarantees hydration before interacting.
 		await expect(
@@ -325,6 +347,13 @@ for (const viewport of [
 		expect(captureButton).not.toBeNull();
 		expect(voiceButton).not.toBeNull();
 		expect(captureButton!.y).toBe(voiceButton!.y);
+		expect(captureButton!.width).toBeGreaterThan(voiceButton!.width * 2);
+		expect(captureButton!.height).toBeGreaterThanOrEqual(56);
+		expect(voiceButton!.width).toBeGreaterThanOrEqual(44);
+		expect(voiceButton!.height).toBeGreaterThanOrEqual(44);
+		await expect(
+			page.getByRole("button", { name: "Enable voice capture" }),
+		).toHaveText("");
 		const state = await page.evaluate(() => {
 			const state = (
 				window as Window & {
@@ -372,7 +401,7 @@ for (const viewport of [
 					.getByLabel("Live photo booth preview")
 					.evaluate((canvas: HTMLCanvasElement) => canvas.width),
 			)
-			.toBe(1153);
+			.toBe(1536);
 		expect(
 			await page.evaluate(
 				() => document.documentElement.scrollWidth <= window.innerWidth,
@@ -382,17 +411,19 @@ for (const viewport of [
 		await expect(
 			page.getByRole("combobox", { name: "Camera device" }),
 		).toBeDisabled();
-		await expect(page.getByAltText("A moment at the baby shower")).toBeVisible({
+		await expect(
+			page.getByAltText("Baby-shower memory captured.jpg"),
+		).toBeVisible({
 			timeout: 10_000,
 		});
 		await expect(page.getByText("Saved privately for the host.")).toBeVisible();
 		const dimensions = await page
-			.getByAltText("A moment at the baby shower")
+			.getByAltText("Baby-shower memory captured.jpg")
 			.evaluate((image: HTMLImageElement) => ({
 				width: image.naturalWidth,
 				height: image.naturalHeight,
 			}));
-		expect(dimensions).toEqual({ width: 1153, height: 768 });
+		expect(dimensions).toEqual({ width: 1536, height: 1024 });
 	});
 }
 
@@ -425,9 +456,7 @@ for (const [width, height] of [
 				return source.captureStream(10);
 			};
 		});
-		await page.route("**/api/photos", (route) =>
-			route.fulfill({ json: { saved: true } }),
-		);
+		await mockSavedCapture(page);
 		await page.goto("/");
 		await expect(
 			page.getByRole("button", { name: "Connect", exact: true }),
@@ -451,7 +480,7 @@ for (const [width, height] of [
 		expect(bounds!.width / bounds!.height).toBeCloseTo(width / height, 2);
 		await expect.poll(() => compositionMatches(page, opening)).toBe(true);
 		await page.getByRole("button", { name: "Take a photo" }).click();
-		const photo = page.getByAltText("A moment at the baby shower");
+		const photo = page.getByAltText("Baby-shower memory captured.jpg");
 		await expect(photo).toBeVisible({ timeout: 10_000 });
 		expect(
 			await photo.evaluate((image: HTMLImageElement) => [
@@ -459,13 +488,14 @@ for (const [width, height] of [
 				image.naturalHeight,
 			]),
 		).toEqual([width, height]);
-		expect(await compositionMatches(page, opening, false, true)).toBe(true);
+		expect(await compositionMatches(page, opening, true, true)).toBe(true);
 	});
 }
 
-test("frame orientation switches without reconnecting and portrait photo mode contains the entire frame on mobile", async ({
+test("portrait photo mode contains the entire default frame on mobile", async ({
 	page,
 }) => {
+	await mockFrame(page, 320, 480);
 	await page.goto("/");
 	await page.getByRole("button", { name: "Connect", exact: true }).click();
 	await expect(
@@ -474,8 +504,6 @@ test("frame orientation switches without reconnecting and portrait photo mode co
 	const original = await page
 		.locator("video")
 		.evaluateHandle((video: HTMLVideoElement) => video.srcObject);
-	await mockFrame(page, 320, 480);
-	await page.getByRole("button", { name: "baby shower", exact: true }).click();
 	await expect
 		.poll(() =>
 			page
@@ -533,25 +561,21 @@ for (const kind of ["opaque", "transparent"] as const) {
 	});
 }
 
-test("frame load failures block capture and selecting a working frame recovers", async ({
+test("frame load failures block capture and refreshing a repaired frame recovers", async ({
 	page,
 }) => {
 	await page.route("**/frames/baby-shower.png", (route) => route.abort());
 	await page.goto("/");
 	await page.getByRole("button", { name: "Connect", exact: true }).click();
 	await expect(
-		page.getByRole("button", { name: "Take a photo" }),
-	).toBeEnabled();
-	await page.getByRole("button", { name: "baby shower", exact: true }).click();
-	await expect(
 		page.getByRole("alert").filter({ hasText: "Could not load that frame" }),
 	).toBeVisible();
 	await expect(
 		page.getByRole("button", { name: "Take a photo" }),
 	).toBeDisabled();
-	await page
-		.getByRole("button", { name: "baby shower backup", exact: true })
-		.click();
+	await page.unroute("**/frames/baby-shower.png");
+	await page.reload();
+	await page.getByRole("button", { name: "Connect", exact: true }).click();
 	await expect(
 		page.getByRole("button", { name: "Take a photo" }),
 	).toBeEnabled();
@@ -572,7 +596,6 @@ test("booth persists preferences locally but not the active camera session", asy
 	await camera.click();
 	await page.getByRole("option", { name: "Front camera (selfie)" }).click();
 	await expect(camera).toHaveValue("Front camera (selfie)");
-	await page.locator(".background-option").nth(1).click();
 	await expect
 		.poll(() =>
 			page.evaluate(
@@ -590,22 +613,79 @@ test("booth persists preferences locally but not the active camera session", asy
 	await expect(
 		page.getByRole("combobox", { name: "Camera device" }),
 	).toHaveValue("Front camera (selfie)");
-	await expect(page.locator(".background-option").nth(1)).toHaveAttribute(
-		"aria-pressed",
-		"true",
-	);
+	await expect(page.locator(".background-option")).toHaveCount(0);
 	await expect(page.getByText("LIVE", { exact: true })).toHaveCount(0);
 	await expect(
 		page.getByRole("button", { name: "Take a photo" }),
 	).toBeDisabled();
 });
 
-test("a late frame load cannot replace a newer selection", async ({ page }) => {
+test("mirror control updates the preview and preserves the choice on reload", async ({
+	page,
+}) => {
+	await mockFrame(page, 320, 480, "transparent");
+	await page.addInitScript(() => {
+		if (!localStorage.getItem("photo-booth-preferences")) {
+			localStorage.setItem(
+				"photo-booth-preferences",
+				JSON.stringify({ state: { settings: { mirror: false } }, version: 0 }),
+			);
+		}
+	});
 	await page.goto("/");
 	await page.getByRole("button", { name: "Connect", exact: true }).click();
 	await expect(
 		page.getByRole("button", { name: "Take a photo" }),
 	).toBeEnabled();
+	const cameraColors = () =>
+		page
+			.getByLabel("Live photo booth preview")
+			.evaluate((source: HTMLCanvasElement) => {
+				const canvas = document.createElement("canvas");
+				canvas.width = source.width;
+				canvas.height = source.height;
+				const context = canvas.getContext("2d");
+				if (!context) throw new Error("Could not read the preview.");
+				context.drawImage(source, 0, 0);
+				const colorAt = (x: number) =>
+					Array.from(
+						context.getImageData(
+							Math.floor(canvas.width * x),
+							Math.floor(canvas.height / 2),
+							1,
+							1,
+						).data,
+					).slice(0, 3);
+				return [colorAt(0.3), colorAt(0.7)];
+			});
+	const expectMirror = async (mirrored: boolean) => {
+		await expect
+			.poll(async () => {
+				const [left, right] = await cameraColors();
+				return mirrored
+					? left[0] > 200 && left[1] < 30 && right[1] > 200 && right[0] < 30
+					: left[1] > 200 && left[0] < 30 && right[0] > 200 && right[1] < 30;
+			})
+			.toBe(true);
+	};
+	await expectMirror(false);
+	const mirror = page.getByRole("button", { name: "Mirror", exact: true });
+	await expect(mirror).toHaveAttribute("aria-pressed", "false");
+	await mirror.click();
+	await expect(mirror).toHaveAttribute("aria-pressed", "true");
+	await expectMirror(true);
+	await page.reload();
+	await expect(mirror).toHaveAttribute("aria-pressed", "true");
+	await page.getByRole("button", { name: "Connect", exact: true }).click();
+	await expectMirror(true);
+	await mirror.click();
+	await expect(mirror).toHaveAttribute("aria-pressed", "false");
+	await expectMirror(false);
+});
+
+test("the shared default overrides personal choices and ignores a late bundled frame load", async ({
+	page,
+}) => {
 	let release: () => void = () => {
 		throw new Error("The delayed frame request has not started.");
 	};
@@ -621,14 +701,34 @@ test("a late frame load cannot replace a newer selection", async ({ page }) => {
 			body: await readFile("public\\frames\\baby-shower.png"),
 		});
 	});
-	await page.getByRole("button", { name: "baby shower", exact: true }).click();
+	await page.route("**/api/backdrops", (route) =>
+		route.fulfill({
+			json: {
+				backdrops: [{ name: "Shared", url: "/shared.png", isDefault: true }],
+			},
+		}),
+	);
+	await page.route("**/shared.png", async (route) =>
+		route.fulfill({
+			contentType: "image/png",
+			body: await readFile("public\\images\\baby-shower-backup.png"),
+		}),
+	);
+	await page.addInitScript(() =>
+		localStorage.setItem(
+			"photo-booth-preferences",
+			JSON.stringify({
+				state: {
+					background: "/frames/baby-shower.png",
+					backgroundChosen: true,
+				},
+				version: 0,
+			}),
+		),
+	);
+	await page.goto("/");
 	await expect.poll(() => requested).toBe(true);
-	await expect(
-		page.getByRole("button", { name: "Take a photo" }),
-	).toBeDisabled();
-	await page
-		.getByRole("button", { name: "baby shower backup", exact: true })
-		.click();
+	await page.getByRole("button", { name: "Connect", exact: true }).click();
 	await expect(
 		page.getByRole("button", { name: "Take a photo" }),
 	).toBeEnabled();
@@ -648,12 +748,18 @@ test("a late frame load cannot replace a newer selection", async ({ page }) => {
 			.getByLabel("Live photo booth preview")
 			.evaluate((canvas: HTMLCanvasElement) => [canvas.width, canvas.height]),
 	).toEqual([1153, 768]);
-	await page
-		.getByRole("button", { name: "baby shower backup", exact: true })
-		.click();
+	await expect
+		.poll(() =>
+			page.evaluate(
+				() =>
+					JSON.parse(localStorage.getItem("photo-booth-preferences")!).state
+						.background,
+			),
+		)
+		.toBe("/shared.png");
 	await expect(
-		page.getByRole("button", { name: "Take a photo" }),
-	).toBeEnabled();
+		page.getByRole("region", { name: "Choose a frame" }),
+	).toHaveCount(0);
 });
 
 test("leaving the booth releases the active webcam track", async ({ page }) => {
@@ -771,6 +877,67 @@ for (const width of [390, 1920]) {
 	});
 }
 
+for (const width of [390, 1280]) {
+	test(`top toolbar hides and restores the gallery without interrupting the camera at ${width}px`, async ({
+		page,
+	}) => {
+		await page.setViewportSize({ width, height: 900 });
+		await page.goto("/");
+		await page.getByRole("button", { name: "Connect", exact: true }).click();
+		await expect(page.getByText("LIVE", { exact: true })).toBeVisible();
+		const gallery = page.getByRole("region", {
+			name: "Saved photos",
+			exact: true,
+		});
+		const preview = page.locator(".booth-preview");
+		const originalWidth = (await preview.boundingBox())!.width;
+		const toolbar = page.locator(".preview-heading");
+		const menu = page.getByRole("button", { name: "Menu", exact: true });
+		const dialog = page.getByRole("dialog", { name: "Menu", exact: true });
+		const hide = toolbar.getByRole("button", {
+			name: "Hide gallery",
+			exact: true,
+		});
+		await expect(hide).toHaveAttribute("aria-expanded", "true");
+		await hide.click();
+		await expect(dialog).toBeHidden();
+		await expect(gallery).toBeHidden();
+		await expect(
+			toolbar.getByRole("button", { name: "Show gallery", exact: true }),
+		).toBeFocused();
+		if (width > 800) {
+			expect((await preview.boundingBox())!.width).toBeGreaterThan(
+				originalWidth + 100,
+			);
+		}
+		await expect(page.getByText("LIVE", { exact: true })).toBeVisible();
+		const show = toolbar.getByRole("button", {
+			name: "Show gallery",
+			exact: true,
+		});
+		await expect(show).toHaveAttribute("aria-expanded", "false");
+		await show.click();
+		await expect(dialog).toBeHidden();
+		await expect(gallery).toBeVisible();
+		await expect
+			.poll(async () => (await preview.boundingBox())!.width)
+			.toBeCloseTo(originalWidth, 1);
+		await expect(
+			page.getByRole("button", { name: "Take a photo" }),
+		).toBeEnabled();
+		await menu.click();
+		await expect(
+			dialog.getByRole("button", { name: /Hide gallery|Show gallery/ }),
+		).toHaveCount(0);
+		await page.keyboard.press("Escape");
+		expect(
+			await page.evaluate(
+				() => document.documentElement.scrollWidth <= window.innerWidth,
+			),
+		).toBe(true);
+	});
+}
+
 test("mobile puts booth first with camera and menu controls in the preview", async ({
 	page,
 }) => {
@@ -825,24 +992,64 @@ test("mobile puts booth first with camera and menu controls in the preview", asy
 	).toBeEnabled();
 });
 
-test("backdrop carousel controls move between frames on mobile", async ({
+test("gallery carousel swipes between photos on mobile and opens an accessible viewer", async ({
 	page,
 }) => {
-	await page.setViewportSize({ width: 320, height: 844 });
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.route("**/api/photos?offset=*", (route) =>
+		route.fulfill({
+			json: {
+				photos: [1, 2, 3].map((number) => ({
+					name: `${number}.jpg`,
+					createdAt: "2026-11-09T12:00:00Z",
+					url:
+						"data:image/svg+xml," +
+						encodeURIComponent(
+							'<svg xmlns="http://www.w3.org/2000/svg" width="300" height="500"><rect width="300" height="500" fill="skyblue"/></svg>',
+						),
+				})),
+				nextOffset: null,
+			},
+		}),
+	);
 	await page.goto("/");
-
-	const carousel = page.getByRole("region", { name: "Choose a frame" });
-	await expect(
-		carousel.getByRole("button", { name: "Next backdrops" }),
-	).toBeEnabled();
-	await carousel.getByRole("button", { name: "Next backdrops" }).click();
-	await expect(
-		carousel.getByRole("button", { name: "Previous backdrops" }),
-	).toBeEnabled();
-	await carousel.getByRole("button", { name: "Previous backdrops" }).click();
-	await expect(
-		carousel.getByRole("button", { name: "Previous backdrops" }),
-	).toBeDisabled();
+	const carousel = page.getByRole("region", {
+		name: "Photo gallery",
+		exact: true,
+	});
+	await carousel.scrollIntoViewIfNeeded();
+	const second = carousel.getByRole("button", { name: "Open photo 2.jpg" });
+	const before = await second.boundingBox();
+	const first = await carousel
+		.getByRole("button", { name: "Open photo 1.jpg" })
+		.boundingBox();
+	expect(first!.width).toBeLessThan(230);
+	await page.mouse.move(
+		first!.x + first!.width - 10,
+		first!.y + first!.height / 2,
+	);
+	await page.mouse.down();
+	await page.mouse.move(first!.x + 10, first!.y + first!.height / 2, {
+		steps: 12,
+	});
+	await page.mouse.up();
+	await expect
+		.poll(async () => (await second.boundingBox())!.x)
+		.toBeLessThan(before!.x - 100);
+	await second.click();
+	const dialog = page.getByRole("dialog", { name: "Photo memory" });
+	await expect(dialog).toBeVisible();
+	await expect(dialog.getByRole("img")).toHaveCSS("object-fit", "contain");
+	expect((await dialog.boundingBox())!.width).toBeLessThan(390);
+	await page.keyboard.press("Escape");
+	await expect(dialog).toBeHidden();
+	await expect(second).toBeFocused();
+	await expect(page.locator(".background-option")).toHaveCount(0);
+	expect(
+		await page.evaluate(
+			() => document.documentElement.scrollWidth <= innerWidth,
+		),
+	).toBe(true);
 });
 
 test("desktop keeps the camera preview dominant with compact surrounding layout", async ({
@@ -855,7 +1062,7 @@ test("desktop keeps the camera preview dominant with compact surrounding layout"
 	).toBeVisible();
 	const preview = await page.locator(".preview").boundingBox();
 	const stage = await page.locator(".preview-stage").boundingBox();
-	const picker = await page.locator(".backdrop-picker").boundingBox();
+	const picker = await page.locator(".booth-gallery").boundingBox();
 	const camera = await page
 		.getByRole("combobox", { name: "Camera device" })
 		.boundingBox();
@@ -864,16 +1071,10 @@ test("desktop keeps the camera preview dominant with compact surrounding layout"
 		.boundingBox();
 	expect(stage?.y).toBeLessThan(100);
 	expect(stage?.width).toBeGreaterThanOrEqual(650);
-	expect(camera!.y).toBeLessThan(picker!.y);
-	expect(camera!.y + camera!.height / 2).toBeCloseTo(
-		photoMode!.y + photoMode!.height / 2,
-		0,
-	);
+	expect(camera!.y).toBeGreaterThanOrEqual(0);
+	expect(photoMode!.y).toBeGreaterThanOrEqual(0);
 	expect(picker!.x).toBeGreaterThanOrEqual(stage!.x + stage!.width);
-	await expect(page.locator(".backdrop-list")).toHaveCSS(
-		"flex-direction",
-		"column",
-	);
+	await expect(page.locator(".gallery-scroll")).toHaveCSS("overflow-y", "auto");
 	expect(preview).not.toBeNull();
 	await expect(page.locator("aside.controls-card")).toHaveCount(0);
 	const menu = await page
@@ -884,6 +1085,177 @@ test("desktop keeps the camera preview dominant with compact surrounding layout"
 			menu!.y + menu!.height / 2 - (photoMode!.y + photoMode!.height / 2),
 		),
 	).toBeLessThan(3);
+});
+
+test("gallery glass preserves visible background detail instead of washing it out", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 1366, height: 768 });
+	await page.goto("/");
+	await page.addStyleTag({
+		content: `
+			.booth-snow {
+				background: repeating-linear-gradient(90deg, blue 0 12px, red 12px 24px);
+			}
+			.booth-snow canvas { visibility: hidden; }
+		`,
+	});
+	const gallery = page.getByRole("region", {
+		name: "Saved photos",
+		exact: true,
+	});
+	await expect(gallery).toBeVisible();
+	const bounds = await gallery.boundingBox();
+	if (!bounds) throw new Error("Gallery is not rendered.");
+	const screenshot = await page.screenshot({
+		clip: {
+			x: Math.floor(bounds.x) + 20,
+			y: Math.floor(bounds.y + bounds.height) - 100,
+			width: 48,
+			height: 40,
+		},
+	});
+	const contrast = await page.evaluate(
+		async (dataUrl) => {
+			const image = new Image();
+			image.src = dataUrl;
+			await image.decode();
+			const canvas = document.createElement("canvas");
+			canvas.width = image.width;
+			canvas.height = image.height;
+			const context = canvas.getContext("2d");
+			if (!context) throw new Error("Could not inspect gallery screenshot.");
+			context.drawImage(image, 0, 0);
+			const pixels = context.getImageData(0, 20, image.width, 1).data;
+			const reds = Array.from({ length: image.width }, (_, x) => pixels[x * 4]);
+			return Math.max(...reds) - Math.min(...reds);
+		},
+		`data:image/png;base64,${screenshot.toString("base64")}`,
+	);
+	expect(contrast).toBeGreaterThan(100);
+});
+
+test("desktop gallery has one scrolling column and repeated captures refresh newest first", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 1366, height: 768 });
+	let captures = 0;
+	const image =
+		"data:image/svg+xml," +
+		encodeURIComponent(
+			'<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"><rect width="300" height="200" fill="skyblue"/></svg>',
+		);
+	await page.route("**/api/photos?offset=*", (route) =>
+		route.fulfill({
+			json: {
+				photos: [
+					...(captures
+						? [
+								{
+									name: `capture-${captures}.jpg`,
+									createdAt: new Date().toISOString(),
+									url: image,
+								},
+							]
+						: []),
+					...Array.from({ length: 24 }, (_, index) => ({
+						name: `older-${index}.jpg`,
+						createdAt: "2026-11-09T12:00:00Z",
+						url: image,
+					})),
+				],
+				nextOffset: null,
+			},
+		}),
+	);
+	await page.route("**/api/photos", (route) => {
+		captures++;
+		return route.fulfill({ json: { saved: true } });
+	});
+	await page.goto("/");
+	const gallery = page.getByRole("region", {
+		name: "Saved photos",
+		exact: true,
+	});
+	await expect(gallery.locator(".gallery-photo")).toHaveCount(24);
+	const refresh = gallery.getByRole("button", { name: "Refresh photos" });
+	await expect(refresh).toHaveText("");
+	await expect(refresh.locator("svg")).toBeVisible();
+	expect((await gallery.boundingBox())!.width).toBeLessThanOrEqual(300);
+	await expect(gallery).toHaveCSS("backdrop-filter", /blur\(/);
+	await expect(gallery).toHaveCSS(
+		"background-color",
+		/(?:\/\s*0\.15|,\s*0\.15)\)/,
+	);
+	await expect(gallery.locator(".gallery-photo time")).toHaveCount(0);
+	const thumbnail = gallery.getByRole("button", {
+		name: "Open photo older-0.jpg",
+	});
+	await thumbnail.hover();
+	const tooltip = page.locator('[data-slot="tooltip-content"]');
+	await expect(tooltip).toContainText("Uploaded");
+	await expect(tooltip.locator("time")).toHaveAttribute(
+		"dateTime",
+		"2026-11-09T12:00:00Z",
+	);
+	await gallery.getByRole("button", { name: "Refresh photos" }).hover();
+	await expect(tooltip).toBeHidden();
+	await gallery.getByRole("button", { name: "Refresh photos" }).focus();
+	await page.keyboard.press("Tab");
+	await expect(thumbnail).toBeFocused();
+	await expect(tooltip).toBeVisible();
+	await page.keyboard.press("Escape");
+	await expect(tooltip).toBeHidden();
+	const cards = gallery.locator(".gallery-photo");
+	const first = await cards.nth(0).boundingBox();
+	expect(first!.width).toBeGreaterThan(200);
+	const second = await cards.nth(1).boundingBox();
+	const third = await cards.nth(2).boundingBox();
+	expect(second!.y).toBeGreaterThan(first!.y);
+	expect(second!.x).toBe(first!.x);
+	expect(third!.x).toBe(first!.x);
+	expect(third!.y).toBeGreaterThan(second!.y);
+	const scroll = gallery.locator(".gallery-scroll");
+	await scroll.evaluate(
+		(element) => (element.scrollTop = element.scrollHeight),
+	);
+	expect(await scroll.evaluate((element) => element.scrollTop)).toBeGreaterThan(
+		0,
+	);
+	expect(await page.evaluate(() => window.scrollY)).toBe(0);
+	expect((await gallery.boundingBox())!.height).toBe(744);
+	await page.getByRole("button", { name: "Connect", exact: true }).click();
+	for (const number of [1, 2]) {
+		if (number === 2) {
+			await page
+				.getByRole("button", { name: "Hide gallery", exact: true })
+				.click();
+			await expect(gallery).toBeHidden();
+		}
+		await page.getByRole("button", { name: "Take a photo" }).click();
+		if (number === 2) {
+			await expect(
+				page.getByText("Saved privately for the host.", { exact: true }),
+			).toBeVisible({ timeout: 10_000 });
+			await page
+				.getByRole("button", { name: "Show gallery", exact: true })
+				.click();
+		}
+		await expect(
+			gallery.getByRole("button", { name: `Open photo capture-${number}.jpg` }),
+		).toBeVisible({ timeout: 10_000 });
+		await expect(
+			page.getByRole("button", { name: "Take a photo" }),
+		).toBeEnabled();
+		await expect(
+			cards
+				.first()
+				.getByRole("button", { name: `Open photo capture-${number}.jpg` }),
+		).toBeVisible();
+		expect(await scroll.evaluate((element) => element.scrollTop)).toBe(0);
+	}
+	await expect(page.getByRole("button", { name: "Retake" })).toHaveCount(0);
+	expect(captures).toBe(2);
 });
 
 for (const viewport of [
@@ -903,7 +1275,7 @@ for (const viewport of [
 		for (const selector of [
 			".booth-preview",
 			".preview",
-			".backdrop-picker",
+			".booth-gallery",
 			".actions",
 		]) {
 			const bounds = await page.locator(selector).boundingBox();
@@ -928,12 +1300,14 @@ for (const viewport of [
 		expect(heading!.y + heading!.height).toBeLessThanOrEqual(preview!.y);
 		expect(preview!.width / preview!.height).toBeCloseTo(1153 / 768, 2);
 		await page.getByRole("button", { name: "Take a photo" }).click();
-		await expect(page.getByRole("button", { name: "Retake" })).toBeVisible({
+		await expect(page.getByText("Saved privately for the host.")).toBeVisible({
 			timeout: 10_000,
 		});
 		const actions = await page.locator(".actions").boundingBox();
 		expect(actions!.y + actions!.height).toBeLessThanOrEqual(viewport.height);
-		await page.getByRole("button", { name: "Retake" }).click();
+		await expect(
+			page.getByRole("button", { name: "Take a photo" }),
+		).toBeEnabled();
 		await page.getByRole("button", { name: "Menu", exact: true }).click();
 		await expect(
 			page.getByRole("dialog", { name: "Menu", exact: true }),
@@ -970,6 +1344,15 @@ for (const viewport of [
 		await expect(
 			page.getByRole("button", { name: "Enable voice capture" }),
 		).toBeVisible();
+		const capture = await page
+			.getByRole("button", { name: "Take a photo" })
+			.boundingBox();
+		const voice = await page
+			.getByRole("button", { name: "Enable voice capture" })
+			.boundingBox();
+		expect(capture!.y).toBe(voice!.y);
+		expect(capture!.width).toBeGreaterThan(voice!.width * 2);
+		expect(voice!.x + voice!.width).toBeLessThanOrEqual(viewport.width);
 		const preview = await page.locator(".preview").boundingBox();
 		expect(preview?.x).toBe(0);
 		expect(preview?.y).toBe(0);
@@ -1003,12 +1386,15 @@ for (const viewport of [
 		);
 		await page.getByRole("button", { name: "Photo mode" }).click();
 		await page.getByRole("button", { name: "Take a photo" }).click();
-		await expect(page.getByRole("button", { name: "Retake" })).toBeVisible({
+		await expect(page.getByText("Saved privately for the host.")).toBeVisible({
 			timeout: 10_000,
 		});
+		await expect(page.locator(".booth-gallery")).toBeHidden();
+		await expect(page.locator(".booth-preview")).toHaveClass(/is-photo-mode/);
 		await expect(
-			page.getByRole("button", { name: "Photo mode" }),
-		).toBeVisible();
+			page.getByRole("button", { name: "Take a photo" }),
+		).toBeEnabled();
+		await page.keyboard.press("Escape");
 		await expect(page.locator("body")).not.toHaveCSS("overflow", "hidden");
 	});
 }
@@ -1107,11 +1493,7 @@ test("camera interruption cancels countdown and reconnect restores capture", asy
 test("frame and camera appear in preview and are automatically uploaded without a download step", async ({
 	page,
 }) => {
-	let uploaded: Buffer | null = null;
-	await page.route("**/api/photos", async (route) => {
-		uploaded = route.request().postDataBuffer();
-		await route.fulfill({ json: { saved: true } });
-	});
+	const uploaded = await mockSavedCapture(page);
 	await page.goto("/");
 	await page.getByRole("button", { name: "Connect", exact: true }).click();
 	await expect(page.getByText("LIVE", { exact: true })).toBeVisible();
@@ -1147,19 +1529,26 @@ test("frame and camera appear in preview and are automatically uploaded without 
 						1,
 					).data;
 					return (
-						cameraLeft[1] > 200 &&
-						cameraLeft[0] < 30 &&
-						cameraRight[0] > 200 &&
-						cameraRight[1] < 30 &&
-						openingBehindText[0] > 200 &&
-						openingBehindText[1] < 30 &&
+						cameraLeft[0] > 200 &&
+						cameraLeft[1] < 30 &&
+						cameraRight[1] > 200 &&
+						cameraRight[0] < 30 &&
+						openingBehindText[1] > 200 &&
+						openingBehindText[0] < 30 &&
 						!(border[1] > 200 && border[0] < 30)
 					);
 				}),
 		)
 		.toBe(true);
 	await capture.click();
-	await expect(page.getByAltText("A moment at the baby shower")).toBeVisible({
+	for (const value of [5, 4, 3, 2, 1]) {
+		await expect(
+			page.locator(".preview").getByText(String(value), { exact: true }),
+		).toBeVisible();
+	}
+	await expect(
+		page.getByAltText("Baby-shower memory captured.jpg"),
+	).toBeVisible({
 		timeout: 10_000,
 	});
 	await expect(page.getByText("Saved privately for the host.")).toBeVisible();
@@ -1181,20 +1570,23 @@ test("frame and camera appear in preview and are automatically uploaded without 
 		"countdown",
 		"countdown",
 		"countdown",
+		"countdown",
+		"countdown",
 		"shutter",
 	]);
-	expect(sounds?.slice(0, 3).every((sound) => sound.frequency === 880)).toBe(
+	expect(sounds?.slice(0, 5).every((sound) => sound.frequency === 880)).toBe(
 		true,
 	);
-	expect(sounds?.[3]).toMatchObject({
+	expect(sounds?.[5]).toMatchObject({
 		duration: expect.closeTo(0.18, 2),
 		hasSignal: true,
 	});
-	for (let index = 1; index < 4; index++) {
+	for (let index = 1; index < 6; index++) {
 		expect(sounds![index].time - sounds![index - 1].time).toBeGreaterThan(700);
 	}
+	expect(sounds![5].time - sounds![0].time).toBeGreaterThanOrEqual(4_900);
 	const matches = await page
-		.getByAltText("A moment at the baby shower")
+		.getByAltText("Baby-shower memory captured.jpg")
 		.evaluate((image: HTMLImageElement) => {
 			const canvas = document.createElement("canvas");
 			canvas.width = image.naturalWidth;
@@ -1221,28 +1613,27 @@ test("frame and camera appear in preview and are automatically uploaded without 
 				1,
 			).data;
 			return (
-				left[1] > 180 &&
-				left[0] < 50 &&
-				right[0] > 180 &&
-				right[1] < 50 &&
-				openingBehindText[0] > 180 &&
-				openingBehindText[1] < 50 &&
+				left[0] > 180 &&
+				left[1] < 50 &&
+				right[1] > 180 &&
+				right[0] < 50 &&
+				openingBehindText[1] > 180 &&
+				openingBehindText[0] < 50 &&
 				!(border[1] > 180 && border[0] < 50)
 			);
 		});
 	expect(matches).toBe(true);
 	const capturedBytes = await page
-		.getByAltText("A moment at the baby shower")
+		.getByAltText("Baby-shower memory captured.jpg")
 		.evaluate(async (image: HTMLImageElement) => {
 			const response = await fetch(image.src);
 			return Array.from(new Uint8Array(await response.arrayBuffer()));
 		});
-	expect(Buffer.from(capturedBytes)).toEqual(uploaded);
+	expect(Buffer.from(capturedBytes)).toEqual(uploaded());
 	await expect(page.getByRole("link", { name: "Download photo" })).toHaveCount(
 		0,
 	);
-	await page.getByRole("button", { name: "Retake" }).click();
-	await expect(capture).toBeVisible();
+	await expect(capture).toBeEnabled();
 });
 
 for (const failure of ["unconfigured", "offline"]) {
@@ -1272,6 +1663,8 @@ for (const failure of ["unconfigured", "offline"]) {
 		await expect(
 			page.getByRole("button", { name: "Take a photo" }),
 		).toBeEnabled();
+		if (failure === "offline")
+			await page.getByRole("button", { name: "Photo mode" }).click();
 		await page.getByRole("button", { name: "Take a photo" }).click();
 		await expect(
 			page.getByRole("alert").filter({ hasText: "Not saved online:" }),
@@ -1319,7 +1712,7 @@ test("oversized captures offer download without sending a request to Vercel", as
 	expect(attempts).toBe(0);
 });
 
-test("saving prevents retake and only confirmed saves hide the fallback", async ({
+test("saving prevents another capture and an unconfirmed save can be discarded", async ({
 	page,
 }) => {
 	let release: (() => void) | undefined;
@@ -1339,7 +1732,13 @@ test("saving prevents retake and only confirmed saves hide the fallback", async 
 	await expect(page.getByText("Saving photo…")).toBeVisible({
 		timeout: 10_000,
 	});
-	await expect(page.getByRole("button", { name: "Retake" })).toBeDisabled();
+	await expect(page.getByRole("button", { name: "Saving…" })).toBeDisabled();
+	await expect(page.getByRole("button", { name: "Take a photo" })).toHaveCount(
+		0,
+	);
+	await expect(page.getByRole("button", { name: "Discard photo" })).toHaveCount(
+		0,
+	);
 	await expect(page.getByRole("link", { name: "Download photo" })).toHaveCount(
 		0,
 	);
@@ -1350,7 +1749,14 @@ test("saving prevents retake and only confirmed saves hide the fallback", async 
 	await expect(
 		page.getByRole("link", { name: "Download photo" }),
 	).toBeVisible();
-	await expect(page.getByRole("button", { name: "Retake" })).toBeEnabled();
+	await expect(
+		page.getByRole("button", { name: "Discard photo" }),
+	).toBeEnabled();
+	await page.getByRole("button", { name: "Discard photo" }).click();
+	await expect(
+		page.getByRole("button", { name: "Take a photo" }),
+	).toBeEnabled();
+	await expect(page.getByAltText("A moment at the baby shower")).toHaveCount(0);
 });
 
 test("saving optimistically reserves one upload and rolls back when the save fails", async ({
@@ -1413,7 +1819,7 @@ test("the camera shows through the frame window and green keying stays optional"
 	await page.goto("/");
 	await expect(
 		page.getByRole("region", { name: "Choose a frame" }),
-	).toBeVisible();
+	).toHaveCount(0);
 	await page.getByRole("button", { name: "Connect", exact: true }).click();
 	await expect(
 		page.getByRole("button", { name: "Take a photo" }),
@@ -1513,7 +1919,7 @@ test("booth explains when the key color is not visible to the camera", async ({
 	await expect(hint).toBeVisible({ timeout: 10_000 });
 });
 
-test("admin uploads backdrops and guests select the carousel below the video", async ({
+test("admin uploads a shared default frame and guests use it without a frame picker", async ({
 	page,
 	context,
 	backend,
@@ -1543,14 +1949,9 @@ test("admin uploads backdrops and guests select the carousel below the video", a
 	).toBeVisible();
 	await expect(page.getByAltText("clouds", { exact: true })).toBeVisible();
 	await page.getByRole("link", { name: "Back to booth" }).click();
-	const merged = page.getByRole("region", { name: "Choose a frame" });
-	await expect(merged).toBeVisible();
 	await expect(
-		merged.getByRole("button", { name: "baby shower", exact: true }),
-	).toBeVisible();
-	await expect(
-		merged.getByRole("button", { name: "clouds", exact: true }),
-	).toBeVisible();
+		page.getByRole("region", { name: "Choose a frame" }),
+	).toHaveCount(0);
 	await page.getByRole("button", { name: "Menu", exact: true }).click();
 	await page.getByRole("link", { name: "Manage backdrops" }).click();
 	await page.getByLabel("Backdrop name").fill("Garden");
@@ -1572,17 +1973,21 @@ test("admin uploads backdrops and guests select the carousel below the video", a
 		.getByRole("button", { name: "Upload backdrop", exact: true })
 		.click();
 	await expect(page.getByAltText("garden", { exact: true })).toBeVisible();
+	await page
+		.locator("figure")
+		.filter({ hasText: "garden" })
+		.getByRole("button", { name: "Make booth default" })
+		.click();
+	await expect(
+		page
+			.locator("figure")
+			.filter({ hasText: "garden" })
+			.getByText("· Booth default"),
+	).toBeVisible();
 	await context.addCookies([sessionCookie()]);
 	await page.goto("/");
 	const carousel = page.getByRole("region", { name: "Choose a frame" });
-	await expect(carousel).toBeVisible();
-	await expect(
-		page.getByRole("button", { name: "baby shower", exact: true }),
-	).toBeVisible();
-	await page.getByRole("button", { name: "garden", exact: true }).click();
-	await expect(
-		page.getByRole("button", { name: "garden", exact: true }),
-	).toHaveAttribute("aria-pressed", "true");
+	await expect(carousel).toHaveCount(0);
 	await page.getByRole("button", { name: "Connect", exact: true }).click();
 	await expect(
 		page.getByRole("button", { name: "Take a photo" }),
@@ -1602,11 +2007,8 @@ test("admin uploads backdrops and guests select the carousel below the video", a
 				}),
 		)
 		.toBe(true);
-	const preview = await page.locator(".preview").boundingBox();
-	const picker = await carousel.boundingBox();
-	expect(picker!.y).toBeGreaterThanOrEqual(preview!.y + preview!.height);
 	await page.setViewportSize({ width: 390, height: 844 });
-	await expect(carousel).toBeVisible();
+	await expect(carousel).toHaveCount(0);
 	expect(
 		await page.evaluate(
 			() => document.documentElement.scrollWidth <= innerWidth,
@@ -1619,7 +2021,9 @@ test("admin uploads backdrops and guests select the carousel below the video", a
 	).toBeVisible();
 	backend.listError = false;
 	await page.getByRole("button", { name: "Retry backdrops" }).click();
-	await expect(carousel).toBeVisible();
+	await expect(
+		page.getByRole("alert").filter({ hasText: "Could not load backdrops" }),
+	).toHaveCount(0);
 });
 
 test("jpeg backdrops with a checkerboard window upload as a png with real transparency", async ({
@@ -1741,23 +2145,29 @@ test("admin hides backdrops and assigns the booth default guests start from", as
 		clouds.getByRole("button", { name: "Make booth default" }),
 	).toBeDisabled();
 	await context.addCookies([sessionCookie()]);
+	await page.addInitScript(() =>
+		localStorage.setItem(
+			"photo-booth-preferences",
+			JSON.stringify({
+				state: {
+					background: "/frames/baby-shower.png",
+					backgroundChosen: true,
+				},
+				version: 0,
+			}),
+		),
+	);
 	await page.goto("/");
-	await expect(
-		page.getByRole("button", { name: "garden", exact: true }),
-	).toHaveAttribute("aria-pressed", "true");
-	await expect(
-		page.getByRole("button", { name: "clouds", exact: true }),
-	).toHaveCount(0);
-	await expect(
-		page.getByRole("button", { name: "baby shower", exact: true }),
-	).toBeVisible();
-	await page.getByRole("button", { name: "baby shower", exact: true }).click();
-	await expect(
-		page.getByRole("button", { name: "baby shower", exact: true }),
-	).toHaveAttribute("aria-pressed", "true");
-	await expect(
-		page.getByRole("button", { name: "garden", exact: true }),
-	).toHaveAttribute("aria-pressed", "false");
+	await expect
+		.poll(() =>
+			page.evaluate(
+				() =>
+					JSON.parse(localStorage.getItem("photo-booth-preferences")!).state
+						.background,
+			),
+		)
+		.toContain("_garden.jpg");
+	await expect(page.locator(".background-option")).toHaveCount(0);
 	await context.addCookies([sessionCookie(adminId)]);
 	await page.goto("/admin/backdrops");
 	await garden.getByRole("button", { name: "Use built-in default" }).click();
@@ -1770,17 +2180,19 @@ test("admin hides backdrops and assigns the booth default guests start from", as
 	).toBeVisible();
 	await context.addCookies([sessionCookie()]);
 	await page.goto("/");
-	await expect(page.locator(".background-option").first()).toHaveAttribute(
-		"aria-pressed",
-		"true",
-	);
-	await expect(
-		page.getByRole("button", { name: "clouds", exact: true }),
-	).toBeVisible();
+	await expect
+		.poll(() =>
+			page.evaluate(
+				() =>
+					JSON.parse(localStorage.getItem("photo-booth-preferences")!).state
+						.background,
+			),
+		)
+		.toBe("/frames/baby-shower.png");
 });
 
 for (const interim of [false, true]) {
-	test(`voice capture starts one countdown and can capture again after retake (${interim ? "interim" : "final"} results)`, async ({
+	test(`voice capture starts one countdown and can capture again after saving (${interim ? "interim" : "final"} results)`, async ({
 		page,
 	}) => {
 		await page.addInitScript(() => {
@@ -1815,6 +2227,9 @@ for (const interim of [false, true]) {
 		await expect(
 			page.getByRole("button", { name: "Take a photo" }),
 		).toBeEnabled();
+		const inactiveBackground = await page
+			.getByRole("button", { name: "Enable voice capture" })
+			.evaluate((button) => getComputedStyle(button).backgroundColor);
 		await page.getByRole("button", { name: "Enable voice capture" }).click();
 		await expect(
 			page.getByRole("status").filter({ hasText: "Listening for" }),
@@ -1822,12 +2237,13 @@ for (const interim of [false, true]) {
 		await expect(
 			page.getByRole("button", { name: "Stop voice capture" }),
 		).toHaveAttribute("aria-pressed", "true");
-		await expect(
-			page.getByRole("button", { name: "Stop voice capture" }),
-		).toHaveCSS("border-top-style", "solid");
-		await expect(
-			page.getByRole("button", { name: "Stop voice capture" }),
-		).toHaveCSS("color", "rgb(56, 121, 92)");
+		await expect
+			.poll(() =>
+				page
+					.getByRole("button", { name: "Stop voice capture" })
+					.evaluate((button) => getComputedStyle(button).backgroundColor),
+			)
+			.not.toBe(inactiveBackground);
 		let resultIndex = 0;
 		const speak = async (text: string, isFinal = true) => {
 			await page.evaluate(
@@ -1869,14 +2285,9 @@ for (const interim of [false, true]) {
 		await expect(
 			page.getByRole("button", { name: "Get ready" }),
 		).toBeDisabled();
-		await expect(page.getByAltText("A moment at the baby shower")).toBeVisible({
+		await expect(page.getByText("Saved privately for the host.")).toBeVisible({
 			timeout: 10_000,
 		});
-		await speak("capture", !interim);
-		await expect(
-			page.getByAltText("A moment at the baby shower"),
-		).toBeVisible();
-		await page.getByRole("button", { name: "Retake" }).click();
 		await expect(
 			page.getByRole("button", { name: "Take a photo" }),
 		).toBeEnabled();
@@ -1887,7 +2298,7 @@ for (const interim of [false, true]) {
 			).toBeEnabled();
 		}
 		await speak("capture");
-		await expect(page.getByAltText("A moment at the baby shower")).toBeVisible({
+		await expect(page.getByText("Saved privately for the host.")).toBeVisible({
 			timeout: 10_000,
 		});
 		await page.getByRole("button", { name: "Stop voice capture" }).click();
@@ -1898,7 +2309,7 @@ for (const interim of [false, true]) {
 					.boothAudioEvents,
 		);
 		expect(audio?.filter((event) => event.kind === "countdown")).toHaveLength(
-			6,
+			10,
 		);
 		expect(audio?.filter((event) => event.kind === "shutter")).toHaveLength(2);
 	});
@@ -2144,7 +2555,7 @@ test("authenticated gallery browses pages and refreshes with the booth theme", a
 	await page.getByRole("button", { name: "Menu", exact: true }).click();
 	await expect(page.getByRole("link", { name: "View gallery" })).toHaveCSS(
 		"color",
-		"rgb(85, 142, 174)",
+		"rgb(39, 76, 99)",
 	);
 	await page.getByRole("link", { name: "View gallery" }).click();
 	await page.mouse.move(0, 0);
@@ -2157,30 +2568,41 @@ test("authenticated gallery browses pages and refreshes with the booth theme", a
 	);
 	await expect(page.getByRole("link", { name: "Back to booth" })).toHaveCSS(
 		"color",
-		"rgb(85, 142, 174)",
+		"rgb(39, 76, 99)",
 	);
+	const gallery = page.getByRole("region", {
+		name: "Saved photos",
+		exact: true,
+	});
 	await expect(
-		page.getByAltText("Baby-shower memory newest.jpg"),
+		gallery.getByAltText("Baby-shower memory newest.jpg"),
 	).toBeVisible();
 	await expect
 		.poll(() =>
-			page
+			gallery
 				.getByAltText("Baby-shower memory newest.jpg")
 				.evaluate((image: HTMLImageElement) => image.naturalWidth),
 		)
 		.toBe(1153);
 	await expect(
-		page.getByRole("link", { name: "Open photo newest.jpg" }),
-	).toHaveAttribute("target", "_blank");
+		page.getByRole("button", { name: "Open photo newest.jpg" }),
+	).toBeVisible();
+	await page.getByRole("button", { name: "Open photo newest.jpg" }).click();
+	await expect(
+		page.getByRole("dialog", { name: "Photo memory" }),
+	).toBeVisible();
+	await page.keyboard.press("Escape");
 	await page.getByRole("button", { name: "Load more photos" }).click();
-	await expect(page.getByAltText("Baby-shower memory older.jpg")).toBeVisible();
+	await expect(
+		gallery.getByAltText("Baby-shower memory older.jpg"),
+	).toBeVisible();
 	await expect(
 		page.getByRole("button", { name: "Load more photos" }),
 	).toHaveCount(0);
 	await page.getByRole("button", { name: "Refresh photos" }).click();
-	await expect(page.getByAltText("Baby-shower memory older.jpg")).toHaveCount(
-		0,
-	);
+	await expect(
+		gallery.getByAltText("Baby-shower memory older.jpg"),
+	).toHaveCount(0);
 	await expect(
 		page.getByRole("button", { name: "Sign out", exact: true }),
 	).toBeVisible();
@@ -2191,7 +2613,7 @@ test("authenticated gallery browses pages and refreshes with the booth theme", a
 	).not.toContain("access_token");
 	await page.reload();
 	await expect(
-		page.getByAltText("Baby-shower memory newest.jpg"),
+		gallery.getByAltText("Baby-shower memory newest.jpg"),
 	).toBeVisible();
 	expect(requests).toBeGreaterThanOrEqual(4);
 });
@@ -2286,7 +2708,7 @@ test("gallery keeps loaded photos visible when a background refresh fails", asyn
 			.filter({ hasText: "Showing previously loaded photos" }),
 	).toBeVisible();
 	await expect(
-		page.getByRole("link", { name: "Open photo kept.jpg" }),
+		page.getByRole("button", { name: "Open photo kept.jpg" }),
 	).toBeVisible();
 	await expect(page.getByText("No photos yet.", { exact: false })).toHaveCount(
 		0,

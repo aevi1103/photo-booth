@@ -48,7 +48,12 @@ export function useBoothCapture({
 	);
 
 	function upload(blob: Blob) {
-		uploadMutation.mutate(blob);
+		uploadMutation.mutate(blob, {
+			onSuccess: () => {
+				captureBusyRef.current = false;
+				store.setState({ photo: null });
+			},
+		});
 	}
 
 	function capture() {
@@ -105,9 +110,10 @@ export function useBoothCapture({
 		)
 			return;
 		captureBusyRef.current = true;
-		store.setState({ message: "", countdown: 3 });
+		resetUpload();
+		store.setState({ message: "", countdown: 5 });
 		sounds.play("countdown");
-		let value = 3;
+		let value = 5;
 		const tick = () => {
 			value -= 1;
 			if (value === 0) {
@@ -128,7 +134,7 @@ export function useBoothCapture({
 		captureBusyRef.current = false;
 	}, [store]);
 
-	function retake() {
+	function discard() {
 		captureBusyRef.current = false;
 		store.setState({ photo: null });
 		resetUpload();
@@ -151,6 +157,6 @@ export function useBoothCapture({
 		uploadView,
 		startCountdown,
 		handleCameraInterruption,
-		retake,
+		discard,
 	};
 }

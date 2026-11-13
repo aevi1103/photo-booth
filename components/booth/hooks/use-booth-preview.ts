@@ -62,7 +62,7 @@ export function useBoothPreview(store: BoothStore) {
 		};
 	}, [store]);
 
-	// The selected carousel image is the frame overlay; the camera shows
+	// The shared default image is the frame overlay; the camera shows
 	// through its transparent areas.
 	useEffect(() => {
 		store.setState({ frameReady: false, frameError: "" });
@@ -83,7 +83,7 @@ export function useBoothPreview(store: BoothStore) {
 					frameError:
 						error instanceof Error
 							? error.message
-							: "Could not use that frame. Try another design.",
+							: "Could not use the frame. Refresh the page or contact the host.",
 				});
 			}
 		};
@@ -91,7 +91,7 @@ export function useBoothPreview(store: BoothStore) {
 			if (!cancelled)
 				store.setState({
 					frameError:
-						"Could not load that frame image. Pick another one or refresh the page.",
+						"Could not load that frame image. Refresh the page or contact the host.",
 				});
 		};
 		image.src = background;

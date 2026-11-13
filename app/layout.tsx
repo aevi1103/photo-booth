@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { QueryProvider } from "@/components/query-provider";
 import "./globals.css";
 import { Figtree, Inter } from "next/font/google";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 const figtreeHeading = Figtree({
@@ -32,7 +33,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
 			)}
 		>
 			<body className="flex min-h-full flex-col font-[Arial,sans-serif]">
-				<QueryProvider>{children}</QueryProvider>
+				<TooltipProvider>
+					<QueryProvider>{children}</QueryProvider>
+				</TooltipProvider>
 			</body>
 		</html>
 	);

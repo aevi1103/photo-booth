@@ -4,10 +4,11 @@ import {
 	Camera,
 	Cloud,
 	Download,
+	FlipHorizontal2,
 	Maximize2,
 	Mic,
 	MicOff,
-	RefreshCw,
+	Trash2,
 	X,
 } from "lucide-react";
 import Image from "next/image";
@@ -20,11 +21,10 @@ import {
 } from "react";
 import Webcam from "react-webcam";
 import { useStore } from "zustand";
-import { BackdropCarousel } from "@/components/booth/backdrop-carousel";
 import { CameraControls } from "@/components/booth/camera-controls";
 import type { BoothCamera } from "@/components/booth/hooks/use-booth-camera";
 import type { UploadView } from "@/components/booth/hooks/use-booth-capture";
-import type { Backdrop, BoothStore } from "@/components/booth/store/store";
+import type { BoothStore } from "@/components/booth/store/store";
 import { Button, buttonVariants } from "@/components/ui/button";
 import type { useBoothSounds } from "@/lib/use-booth-sounds";
 import type { useVoiceTrigger } from "@/lib/use-voice-trigger";
@@ -32,7 +32,6 @@ import { Badge } from "../ui/badge";
 
 type Props = {
 	store: BoothStore;
-	backgrounds: Backdrop[];
 	backdropError?: string;
 	onRetryBackdrops: () => void;
 	camera: BoothCamera;
@@ -40,7 +39,7 @@ type Props = {
 	sounds: ReturnType<typeof useBoothSounds>;
 	voice: ReturnType<typeof useVoiceTrigger>;
 	onCapture: () => void;
-	onRetake: () => void;
+	onDiscard: () => void;
 	onUpload: (blob: Blob) => void;
 	upload: UploadView;
 	canCapture: boolean;
@@ -51,7 +50,6 @@ type Props = {
 
 export function BoothPreview({
 	store,
-	backgrounds,
 	backdropError,
 	onRetryBackdrops,
 	camera: { session, attachWebcam, onUserMedia, onError },
@@ -59,7 +57,7 @@ export function BoothPreview({
 	sounds,
 	voice,
 	onCapture,
-	onRetake,
+	onDiscard,
 	onUpload,
 	upload,
 	canCapture,
@@ -80,7 +78,7 @@ export function BoothPreview({
 		keyDetected,
 	} = useStore(store);
 	const [photoMode, setPhotoMode] = useState(false);
-	const isPhotoMode = photoMode && !photo;
+	const isPhotoMode = photoMode;
 	const exitPhotoMode = useCallback(() => {
 		window.history.back();
 		setPhotoMode(false);
@@ -175,6 +173,21 @@ export function BoothPreview({
 									className="flex w-full min-w-0 items-center gap-1.75 min-[801px]:w-62.5 min-[801px]:min-w-55"
 								/>
 								<Button
+									variant={settings.mirror ? "secondary" : "outline"}
+									aria-pressed={settings.mirror}
+									disabled={countdown !== null || photo !== null}
+									onClick={() =>
+										store.setState((state) => ({
+											settings: {
+												...state.settings,
+												mirror: !state.settings.mirror,
+											},
+										}))
+									}
+								>
+									<FlipHorizontal2 data-icon="inline-start" /> Mirror
+								</Button>
+								<Button
 									variant="outline"
 									disabled={!connected || photo !== null}
 									onClick={enterPhotoMode}
@@ -261,7 +274,6 @@ export function BoothPreview({
 						</div>
 					</div>
 				</div>
-				<BackdropCarousel store={store} backgrounds={backgrounds} />
 			</div>
 			{connected && !photo && settings.greenScreen && keyDetected === false && (
 				<p
@@ -316,45 +328,55 @@ export function BoothPreview({
 				{!photo ? (
 					<Button
 						size="lg"
+						className="h-14 min-w-0 flex-1 cursor-pointer text-base font-semibold"
 						disabled={
 							!connected || !frameReady || !canCapture || countdown !== null
 						}
 						onClick={onCapture}
 					>
-						<Cloud /> {countdown !== null ? "Get ready…" : "Take a photo"}
+						<Camera data-icon="inline-start" />{" "}
+						{countdown !== null ? "Get ready…" : "Take a photo"}
 					</Button>
-				) : (
+				) : upload.status === "failed" ? (
 					<>
 						<Button
 							size="lg"
-							disabled={upload.status === "saving"}
-							onClick={() => {
-								setPhotoMode(false);
-								onRetake();
-							}}
+							variant="outline"
+							onClick={onDiscard}
 							className="cursor-pointer"
 						>
-							<RefreshCw /> Retake
+							<Trash2 data-icon="inline-start" /> Discard photo
 						</Button>
-						{upload.status === "failed" && (
-							<a
-								className={buttonVariants({ variant: "outline", size: "lg" })}
-								href={photo.url}
-								download="baby-shower.jpg"
-							>
-								<Download /> Download photo
-							</a>
-						)}
+						<a
+							className={buttonVariants({ variant: "outline", size: "lg" })}
+							href={photo.url}
+							download="baby-shower.jpg"
+						>
+							<Download /> Download photo
+						</a>
 					</>
+				) : (
+					<Button size="lg" className="h-14 min-w-0 flex-1" disabled>
+						Saving…
+					</Button>
 				)}
 				<Button
-					variant={"outline"}
-					size="lg"
+					variant={voice.status === "off" ? "outline" : "secondary"}
+					size="icon-lg"
 					type="button"
-					className="cursor-pointer"
+					className="size-14 cursor-pointer !p-0"
 					aria-pressed={voice.status !== "off"}
+					aria-label={
+						voice.status === "off"
+							? "Enable voice capture"
+							: "Stop voice capture"
+					}
 					aria-describedby="voice-disclosure"
-					title="Say capture to start the countdown. Microphone audio may be sent to your browser's speech service."
+					title={
+						voice.status === "off"
+							? "Enable voice capture"
+							: "Stop voice capture"
+					}
 					onClick={() => {
 						if (voice.status === "off") {
 							void onPrepareSound();
@@ -363,9 +385,6 @@ export function BoothPreview({
 					}}
 				>
 					{voice.status === "off" ? <Mic /> : <MicOff />}
-					{voice.status === "off"
-						? "Enable voice capture"
-						: "Stop voice capture"}
 				</Button>
 			</div>
 			<p
@@ -399,12 +418,18 @@ export function BoothPreview({
 					{voice.error}
 				</p>
 			)}
-			{photo && (
-				<div className="mt-[13px] text-center text-xs text-[#6b8c9d]">
+			{upload.status !== "idle" && (
+				<div
+					className={
+						isPhotoMode
+							? "absolute right-3 bottom-24 left-3 z-[2] rounded-xl bg-background/90 p-3 text-center text-xs text-foreground"
+							: "mt-[13px] text-center text-xs text-[#6b8c9d]"
+					}
+				>
 					<p role={upload.status === "failed" ? "alert" : "status"}>
 						{upload.message}
 					</p>
-					{upload.status === "failed" && (
+					{upload.status === "failed" && photo && (
 						<>
 							<p className="text-xs leading-[1.5] text-[#8a9faa]">
 								Download this photo as a backup, or retry saving before taking

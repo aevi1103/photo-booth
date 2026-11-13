@@ -1,14 +1,17 @@
 "use client";
 
-import { Menu, X } from "lucide-react";
+import { Images, Menu, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useStore } from "zustand";
 import { useBoothController } from "@/components/booth/hooks/use-booth-controller";
 import { BoothPreview } from "@/components/booth/preview";
 import type { Backdrop } from "@/components/booth/store/store";
+import { GalleryPhotos } from "@/components/gallery/photos";
+import { useGallery } from "@/components/gallery/use-gallery";
 import PixelSnow from "@/components/PixelSnow";
 import { SignOut } from "@/components/sign-out";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import {
 	Drawer,
 	DrawerClose,
@@ -19,9 +22,11 @@ import {
 	DrawerTrigger,
 } from "@/components/ui/drawer";
 import { useBackdrops } from "@/lib/queries/backdrops";
+import { cn } from "@/lib/utils";
 
 export function Booth({ backgrounds: defaults }: { backgrounds: Backdrop[] }) {
 	const [menuOpen, setMenuOpen] = useState(false);
+	const gallery = useGallery();
 	const backdrops = useBackdrops();
 	const uploaded = backdrops.data;
 	const backgrounds = useMemo(() => {
@@ -44,27 +49,23 @@ export function Booth({ backgrounds: defaults }: { backgrounds: Backdrop[] }) {
 		connect,
 		upload,
 		uploadView,
-		retake,
+		discard,
 		prepareSound,
 	} = useBoothController(backgrounds);
+	const galleryVisible = useStore(store, (state) => state.galleryVisible);
 
 	useEffect(() => {
 		if (backdrops.isPending) return;
-		const { background, backgroundChosen } = store.getState();
+		const { background } = store.getState();
 		const adminDefault = backgrounds.find((item) => item.isDefault);
-		if (!backgrounds.some((item) => item.url === background))
+		const defaultUrl = adminDefault?.url ?? defaults[0]?.url ?? "";
+		if (background !== defaultUrl)
 			store.setState({
-				background: adminDefault?.url ?? backgrounds[0]?.url ?? "",
+				background: defaultUrl,
 				backgroundChosen: false,
 				frameReady: false,
 			});
-		else if (
-			!backgroundChosen &&
-			adminDefault &&
-			adminDefault.url !== background
-		)
-			store.setState({ background: adminDefault.url, frameReady: false });
-	}, [backdrops.isPending, backgrounds, store]);
+	}, [backdrops.isPending, backgrounds, defaults, store]);
 
 	return (
 		<Drawer open={menuOpen} onOpenChange={setMenuOpen}>
@@ -158,18 +159,21 @@ export function Booth({ backgrounds: defaults }: { backgrounds: Backdrop[] }) {
 					)}
 				</div>
 				<div
-					className="booth-grid mx-auto grid max-w-none grid-cols-1 items-start gap-5
+					className={cn(
+						`booth-grid mx-auto grid max-w-none grid-cols-1 items-start gap-5
 				 min-[801px]:gap-4 [@media(min-width:801px)_and_(min-height:600px)]:h-[calc(100dvh-24px)]
 				  [.capture-shell:has(.booth-preview.is-photo-mode)_&]:absolute
 					 [.capture-shell:has(.booth-preview.is-photo-mode)_&]:inset-0 
 					 [.capture-shell:has(.booth-preview.is-photo-mode)_&]:m-0
 					  [.capture-shell:has(.booth-preview.is-photo-mode)_&]:block
 						 [.capture-shell:has(.booth-preview.is-photo-mode)_&]:h-full
-						  [.capture-shell:has(.booth-preview.is-photo-mode)_&]:w-full"
+						  [.capture-shell:has(.booth-preview.is-photo-mode)_&]:w-full`,
+						galleryVisible &&
+							"min-[801px]:grid-cols-[minmax(0,1fr)_clamp(220px,20vw,300px)]",
+					)}
 				>
 					<BoothPreview
 						store={store}
-						backgrounds={backgrounds}
 						backdropError={
 							backdrops.isError ? backdrops.error.message : undefined
 						}
@@ -179,18 +183,41 @@ export function Booth({ backgrounds: defaults }: { backgrounds: Backdrop[] }) {
 						sounds={sounds}
 						voice={voice}
 						onCapture={startCountdown}
-						onRetake={retake}
+						onDiscard={discard}
 						onUpload={upload}
 						upload={uploadView}
 						canCapture={canCapture}
 						onPrepareSound={prepareSound}
 						onConnect={(deviceId) => void connect(deviceId)}
 						menu={
-							<DrawerTrigger render={<Button variant="outline" size="lg" />}>
-								<Menu /> Menu
-							</DrawerTrigger>
+							<>
+								<Button
+									variant="outline"
+									size="lg"
+									aria-label={galleryVisible ? "Hide gallery" : "Show gallery"}
+									title={galleryVisible ? "Hide gallery" : "Show gallery"}
+									aria-controls="booth-gallery"
+									aria-expanded={galleryVisible}
+									onClick={() => {
+										store.setState((state) => ({
+											galleryVisible: !state.galleryVisible,
+										}));
+									}}
+								>
+									<Images data-icon="inline-start" />
+									<span className="hidden xl:inline">
+										{galleryVisible ? "Hide gallery" : "Show gallery"}
+									</span>
+								</Button>
+								<DrawerTrigger render={<Button variant="outline" size="lg" />}>
+									<Menu /> <span className="sr-only sm:not-sr-only">Menu</span>
+								</DrawerTrigger>
+							</>
 						}
 					/>
+					<div id="booth-gallery" className="min-w-0" hidden={!galleryVisible}>
+						<GalleryPhotos gallery={gallery} layout="booth" />
+					</div>
 				</div>
 				<div className="booth-snow" aria-hidden="true">
 					<PixelSnow

@@ -54,7 +54,7 @@ export function useBoothController(backgrounds: Backdrop[]) {
 		connect: camera.connect,
 		upload: capture.upload,
 		uploadView: capture.uploadView,
-		retake: capture.retake,
+		discard: capture.discard,
 		prepareSound: sounds.prepare,
 	};
 }

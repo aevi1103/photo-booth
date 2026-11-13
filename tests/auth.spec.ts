@@ -219,7 +219,29 @@ test("photo deletion is owner/admin scoped and does not restore upload quota", a
   } finally { await admin.dispose(); }
 });
 
+test("gallery deletion controls are admin-only and confined to the standalone gallery", async ({ page, backend }) => {
+  const name = `${userId}/visible.jpg`;
+  await backend.db.query("insert into storage.objects(bucket_id, name) values ('photos', $1)", [name]);
+  backend.objects.set(name, jpeg);
+  for (const isAdmin of [false, true]) {
+    await page.context().addCookies([sessionCookie(isAdmin ? adminId : userId)]);
+    for (const path of ["/", "/gallery"]) {
+      await page.goto(path);
+      await expect(page.getByText("1 photo loaded")).toBeVisible();
+      const canDelete = isAdmin && path === "/gallery";
+      await expect(page.getByRole("button", { name: "Delete", exact: true })).toHaveCount(canDelete ? 1 : 0);
+      await expect(page.getByRole("button", { name: /^Delete selected/ })).toHaveCount(canDelete ? 1 : 0);
+      await expect(page.getByRole("checkbox", { name: `Select photo ${name}`, exact: true })).toHaveCount(canDelete ? 1 : 0);
+    }
+  }
+  await page.route("**/api/account", route => route.fulfill({ status: 503, json: { error: "Could not load your upload allowance." } }));
+  await page.reload();
+  await expect(page.getByText("1 photo loaded")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Delete", exact: true })).toHaveCount(0);
+});
+
 test("gallery confirms photo deletion and removes it after success", async ({ page, backend }) => {
+  await page.context().addCookies([sessionCookie(adminId)]);
   const name = `${userId}/gallery-delete.jpg`;
   await backend.db.query("insert into storage.objects(bucket_id, name) values ('photos', $1)", [name]);
   backend.objects.set(name, jpeg);
@@ -240,13 +262,21 @@ test("gallery confirms photo deletion and removes it after success", async ({ pa
 });
 
 test("gallery deletes only checked photos after confirmation", async ({ page, backend }) => {
+  await page.context().addCookies([sessionCookie(adminId)]);
   const names = [1, 2, 3].map((number) => `${userId}/selected-${number}.jpg`);
   for (const name of names) {
     await backend.db.query("insert into storage.objects(bucket_id, name) values ('photos', $1)", [name]);
     backend.objects.set(name, jpeg);
   }
-  await page.goto("/gallery");
+  await page.goto("/");
+  await page.getByRole("button", { name: "Menu", exact: true }).click();
+  await page.getByRole("link", { name: "View gallery", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Photo gallery", exact: true })).toBeVisible();
   await expect(page.getByRole("checkbox")).toHaveCount(3);
+  const firstLabel = page.getByRole("region", { name: "Saved photos", exact: true }).locator("label").first();
+  await firstLabel.click();
+  await expect(page.getByRole("button", { name: "Delete selected (1)", exact: true })).toBeEnabled();
+  await firstLabel.click();
   await expect(page.getByRole("button", { name: "Delete selected (0)", exact: true })).toBeDisabled();
   for (const name of names) await page.getByRole("checkbox", { name: `Select photo ${name}`, exact: true }).check();
   await page.getByRole("checkbox", { name: `Select photo ${names[2]}`, exact: true }).uncheck();
@@ -263,6 +293,7 @@ test("gallery deletes only checked photos after confirmation", async ({ page, ba
 });
 
 test("gallery reports partial deletion failures and retries remaining checked photos", async ({ page, backend }) => {
+  await page.context().addCookies([sessionCookie(adminId)]);
   const names = [1, 2].map((number) => `${userId}/retry-${number}.jpg`);
   for (const name of names) {
     await backend.db.query("insert into storage.objects(bucket_id, name) values ('photos', $1)", [name]);
@@ -391,7 +422,7 @@ test("booth shows last upload and disables manual and voice capture at zero", as
   await page.getByRole("button", { name: "Take a photo" }).click();
   await expect(page.getByText("Saved privately for the host.")).toBeVisible({ timeout: 10_000 });
   await expect(page.getByText("0 of 20 photo uploads remaining")).toBeVisible();
-  await page.getByRole("button", { name: "Retake", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Retake", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Take a photo" })).toBeDisabled();
   await page.getByRole("button", { name: "Enable voice capture" }).click();
   await page.evaluate(() => {

@@ -18,12 +18,13 @@ export const initialSettings: Settings = {
 	color: "#00a000",
 	threshold: 0.25,
 	softness: 0.2,
-	mirror: false,
+	mirror: true,
 	greenScreen: false,
 };
 
 export type BoothState = {
 	settings: Settings;
+	galleryVisible: boolean;
 	devices: MediaDeviceInfo[];
 	deviceId: string;
 	background: string;
@@ -52,6 +53,7 @@ export function createBoothStore(backgrounds: Backdrop[]) {
 		persist<BoothState, [], [], PersistedBoothState>(
 			() => ({
 				settings: initialSettings,
+				galleryVisible: true,
 				devices: [],
 				deviceId: "",
 				background: backgrounds[0]?.url ?? "",
