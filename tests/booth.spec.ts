@@ -1686,7 +1686,11 @@ test("three-box frame shoots each box in turn, then reviews, retakes and saves o
 		.poll(() => boxColors(page))
 		.toEqual(["red|green", "empty|empty", "empty|empty"]);
 
-	await capture.click();
+	await page.evaluate(() => {
+		if (document.activeElement instanceof HTMLElement)
+			document.activeElement.blur();
+	});
+	await page.keyboard.press("Enter");
 	const progress = page.locator(".preview").getByRole("status");
 	await expect(progress).toHaveText("Photo 1 of 3");
 	for (const value of [5, 4, 3, 2, 1]) {

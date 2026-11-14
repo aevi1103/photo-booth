@@ -57,6 +57,29 @@ export function Booth({ backgrounds: defaults }: { backgrounds: Backdrop[] }) {
 	const galleryVisible = useStore(store, (state) => state.galleryVisible);
 
 	useEffect(() => {
+		const captureOnEnter = (event: KeyboardEvent) => {
+			if (
+				menuOpen ||
+				event.key !== "Enter" ||
+				event.repeat ||
+				event.altKey ||
+				event.ctrlKey ||
+				event.metaKey ||
+				event.shiftKey ||
+				(event.target instanceof Element &&
+					event.target.closest(
+						"button, a, input, select, textarea, [contenteditable], [role=button], [role=link]",
+					))
+			)
+				return;
+			event.preventDefault();
+			startCountdown();
+		};
+		window.addEventListener("keydown", captureOnEnter);
+		return () => window.removeEventListener("keydown", captureOnEnter);
+	}, [menuOpen, startCountdown]);
+
+	useEffect(() => {
 		if (backdrops.isPending) return;
 		const { background } = store.getState();
 		const adminDefault = backgrounds.find((item) => item.isDefault);
