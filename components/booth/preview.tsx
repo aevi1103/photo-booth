@@ -2,12 +2,14 @@
 
 import {
 	Camera,
+	Check,
 	Cloud,
 	Download,
 	FlipHorizontal2,
 	Maximize2,
 	Mic,
 	MicOff,
+	RotateCcw,
 	Trash2,
 	X,
 } from "lucide-react";
@@ -40,6 +42,8 @@ type Props = {
 	voice: ReturnType<typeof useVoiceTrigger>;
 	onCapture: () => void;
 	onDiscard: () => void;
+	onSave: () => void;
+	onRetake: () => void;
 	onUpload: (blob: Blob) => void;
 	upload: UploadView;
 	canCapture: boolean;
@@ -58,6 +62,8 @@ export function BoothPreview({
 	voice,
 	onCapture,
 	onDiscard,
+	onSave,
+	onRetake,
 	onUpload,
 	upload,
 	canCapture,
@@ -73,10 +79,16 @@ export function BoothPreview({
 		message,
 		frameReady,
 		frameSize,
+		frameOpenings,
+		shotIndex,
 		frameError,
 		settings,
 		keyDetected,
 	} = useStore(store);
+	const capturing = countdown !== null || shotIndex !== null;
+	const shotTotal = Math.max(1, frameOpenings.length);
+	const activeOpening =
+		shotIndex !== null ? frameOpenings[shotIndex] : undefined;
 	const [photoMode, setPhotoMode] = useState(false);
 	const isPhotoMode = photoMode;
 	const exitPhotoMode = useCallback(() => {
@@ -175,7 +187,7 @@ export function BoothPreview({
 								<Button
 									variant={settings.mirror ? "secondary" : "outline"}
 									aria-pressed={settings.mirror}
-									disabled={countdown !== null || photo !== null}
+									disabled={capturing || photo !== null}
 									onClick={() =>
 										store.setState((state) => ({
 											settings: {
@@ -263,12 +275,46 @@ export function BoothPreview({
 									unoptimized
 								/>
 							)}
-							{countdown !== null && (
-								<div
-									className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 text-[100px] font-bold
-								 text-white [text-shadow:0_2px_20px_#0008]"
-								>
-									{countdown}
+							{capturing && !photo && (
+								// Matches the canvas's contained frame so the countdown sits on
+								// the active box, including in letterboxed photo mode.
+								<div className="pointer-events-none absolute inset-0 grid place-items-center @container-size">
+									<div
+										className="relative w-[min(100cqw,calc(100cqh*var(--frame-aspect)))]"
+										style={{
+											aspectRatio: frameSize
+												? `${frameSize.width} / ${frameSize.height}`
+												: "16 / 9",
+										}}
+									>
+										<div
+											className="absolute flex flex-col items-center justify-center gap-2.5 font-bold text-white [text-shadow:0_2px_20px_#0008]"
+											style={
+												activeOpening
+													? {
+															left: `${activeOpening.x * 100}%`,
+															top: `${activeOpening.y * 100}%`,
+															width: `${activeOpening.width * 100}%`,
+															height: `${activeOpening.height * 100}%`,
+														}
+													: { inset: 0 }
+											}
+										>
+											{countdown !== null && (
+												<span className="text-[clamp(56px,9cqw,100px)] leading-none">
+													{countdown}
+												</span>
+											)}
+											{shotTotal > 1 && shotIndex !== null && (
+												<span
+													className="rounded-full bg-black/45 px-3 py-1 text-sm font-semibold [text-shadow:none]"
+													role="status"
+												>
+													Photo {shotIndex + 1} of {shotTotal}
+												</span>
+											)}
+										</div>
+									</div>
 								</div>
 							)}
 						</div>
@@ -329,14 +375,31 @@ export function BoothPreview({
 					<Button
 						size="lg"
 						className="h-14 min-w-0 flex-1 cursor-pointer text-base font-semibold"
-						disabled={
-							!connected || !frameReady || !canCapture || countdown !== null
-						}
+						disabled={!connected || !frameReady || !canCapture || capturing}
 						onClick={onCapture}
 					>
 						<Camera data-icon="inline-start" />{" "}
-						{countdown !== null ? "Get ready…" : "Take a photo"}
+						{capturing ? "Get ready…" : "Take a photo"}
 					</Button>
+				) : upload.status === "idle" ? (
+					<>
+						<Button
+							size="lg"
+							variant="outline"
+							className="h-14 cursor-pointer"
+							disabled={!connected || !canCapture}
+							onClick={onRetake}
+						>
+							<RotateCcw data-icon="inline-start" /> Retake
+						</Button>
+						<Button
+							size="lg"
+							className="h-14 min-w-0 flex-1 cursor-pointer text-base font-semibold"
+							onClick={onSave}
+						>
+							<Check data-icon="inline-start" /> Save photo
+						</Button>
+					</>
 				) : upload.status === "failed" ? (
 					<>
 						<Button

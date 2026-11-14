@@ -28,6 +28,9 @@ export function useBoothController(backgrounds: Backdrop[]) {
 	const capture = useBoothCapture({
 		store,
 		canvasRef,
+		videoRef,
+		compositorRef,
+		settingsRef,
 		streamRef,
 		sounds,
 	});
@@ -55,6 +58,8 @@ export function useBoothController(backgrounds: Backdrop[]) {
 		upload: capture.upload,
 		uploadView: capture.uploadView,
 		discard: capture.discard,
+		save: capture.save,
+		retake: capture.retake,
 		prepareSound: sounds.prepare,
 	};
 }

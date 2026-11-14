@@ -4,7 +4,7 @@ import { createStore } from "zustand/vanilla";
 export type { Backdrop } from "@/lib/backdrops";
 
 import type { Backdrop } from "@/lib/backdrops";
-import type { FrameSize } from "@/lib/frame-geometry";
+import type { FrameSize, Opening } from "@/lib/frame-geometry";
 export type Photo = { url: string; blob: Blob };
 export type Settings = {
 	color: string;
@@ -32,12 +32,16 @@ export type BoothState = {
 	keyDetected: boolean | null;
 	frameReady: boolean;
 	frameSize: FrameSize | null;
+	/** Photo boxes in capture order, as fractions of the frame. */
+	frameOpenings: Opening[];
 	frameError: string;
 	connected: boolean;
 	connecting: boolean;
 	resolution: string;
 	message: string;
 	countdown: number | null;
+	/** Box being captured while a multi-shot sequence runs; null when idle. */
+	shotIndex: number | null;
 	photo: Photo | null;
 };
 
@@ -61,12 +65,14 @@ export function createBoothStore(backgrounds: Backdrop[]) {
 				keyDetected: null,
 				frameReady: false,
 				frameSize: null,
+				frameOpenings: [],
 				frameError: "",
 				connected: false,
 				connecting: false,
 				resolution: "",
 				message: "",
 				countdown: null,
+				shotIndex: null,
 				photo: null,
 			}),
 			{

@@ -27,6 +27,13 @@ async function mockSavedCapture(page: Page) {
 	return () => uploaded;
 }
 
+// Every frame box is shot before review; the default frame has three boxes.
+async function savePhoto(page: Page) {
+	const save = page.getByRole("button", { name: "Save photo" });
+	await expect(save).toBeVisible({ timeout: 30_000 });
+	await save.click();
+}
+
 async function mockFrame(
 	page: Page,
 	width: number,
@@ -299,6 +306,7 @@ for (const viewport of [
 	test(`mobile camera switching, framed capture, and upload at ${viewport.width}px`, async ({
 		page,
 	}) => {
+		test.slow();
 		await page.setViewportSize(viewport);
 		await page.addInitScript(() => {
 			const state = {
@@ -401,7 +409,7 @@ for (const viewport of [
 					.getByLabel("Live photo booth preview")
 					.evaluate((canvas: HTMLCanvasElement) => canvas.width),
 			)
-			.toBe(1536);
+			.toBe(1920);
 		expect(
 			await page.evaluate(
 				() => document.documentElement.scrollWidth <= window.innerWidth,
@@ -411,6 +419,7 @@ for (const viewport of [
 		await expect(
 			page.getByRole("combobox", { name: "Camera device" }),
 		).toBeDisabled();
+		await savePhoto(page);
 		await expect(
 			page.getByAltText("Baby-shower memory captured.jpg"),
 		).toBeVisible({
@@ -423,7 +432,7 @@ for (const viewport of [
 				width: image.naturalWidth,
 				height: image.naturalHeight,
 			}));
-		expect(dimensions).toEqual({ width: 1536, height: 1024 });
+		expect(dimensions).toEqual({ width: 1920, height: 1080 });
 	});
 }
 
@@ -480,6 +489,7 @@ for (const [width, height] of [
 		expect(bounds!.width / bounds!.height).toBeCloseTo(width / height, 2);
 		await expect.poll(() => compositionMatches(page, opening)).toBe(true);
 		await page.getByRole("button", { name: "Take a photo" }).click();
+		await savePhoto(page);
 		const photo = page.getByAltText("Baby-shower memory captured.jpg");
 		await expect(photo).toBeVisible({ timeout: 10_000 });
 		expect(
@@ -1170,6 +1180,7 @@ test("gallery glass preserves visible background detail instead of washing it ou
 test("desktop gallery has one scrolling column and repeated captures refresh newest first", async ({
 	page,
 }) => {
+	test.slow();
 	await page.setViewportSize({ width: 1366, height: 768 });
 	let captures = 0;
 	const image =
@@ -1265,6 +1276,7 @@ test("desktop gallery has one scrolling column and repeated captures refresh new
 			await expect(gallery).toBeHidden();
 		}
 		await page.getByRole("button", { name: "Take a photo" }).click();
+		await savePhoto(page);
 		if (number === 2) {
 			await expect(
 				page.getByText("Saved privately for the host.", { exact: true }),
@@ -1298,6 +1310,7 @@ for (const viewport of [
 	test(`desktop booth fits viewport at ${viewport.width}x${viewport.height}`, async ({
 		page,
 	}) => {
+		test.slow();
 		await page.setViewportSize(viewport);
 		await page.goto("/");
 		await page.getByRole("button", { name: "Connect", exact: true }).click();
@@ -1330,8 +1343,9 @@ for (const viewport of [
 		expect(heading!.x).toBeCloseTo(preview!.x, 1);
 		expect(heading!.width).toBeCloseTo(preview!.width, 1);
 		expect(heading!.y + heading!.height).toBeLessThanOrEqual(preview!.y);
-		expect(preview!.width / preview!.height).toBeCloseTo(1153 / 768, 2);
+		expect(preview!.width / preview!.height).toBeCloseTo(1920 / 1080, 2);
 		await page.getByRole("button", { name: "Take a photo" }).click();
+		await savePhoto(page);
 		await expect(page.getByText("Saved privately for the host.")).toBeVisible({
 			timeout: 10_000,
 		});
@@ -1354,6 +1368,7 @@ for (const viewport of [
 	test(`photo mode fills the screen and exits with Escape or browser back at ${viewport.width}px`, async ({
 		page,
 	}) => {
+		test.slow();
 		await page.setViewportSize(viewport);
 		await page.goto("/");
 		await page.getByRole("button", { name: "Connect", exact: true }).click();
@@ -1418,6 +1433,7 @@ for (const viewport of [
 		);
 		await page.getByRole("button", { name: "Photo mode" }).click();
 		await page.getByRole("button", { name: "Take a photo" }).click();
+		await savePhoto(page);
 		await expect(page.getByText("Saved privately for the host.")).toBeVisible({
 			timeout: 10_000,
 		});
@@ -1476,9 +1492,83 @@ for (const name of ["NotAllowedError", "NotFoundError", "NotReadableError"]) {
 	});
 }
 
-test("camera interruption cancels countdown and reconnect restores capture", async ({
+// Box centers in public/frames/photobooth3.png, as fractions of its width.
+const DEFAULT_FRAME_BOXES = [0.174, 0.496, 0.821];
+
+/** Names the left|right colors inside each default-frame box. */
+async function boxColors(page: Page, source: "preview" | "photo" = "preview") {
+	const element =
+		source === "preview"
+			? page.getByLabel("Live photo booth preview")
+			: page.getByAltText("A moment at the baby shower");
+	return element.evaluate((element, boxes) => {
+		const media = element as HTMLCanvasElement | HTMLImageElement;
+		const canvas = document.createElement("canvas");
+		canvas.width =
+			media instanceof HTMLImageElement ? media.naturalWidth : media.width;
+		canvas.height =
+			media instanceof HTMLImageElement ? media.naturalHeight : media.height;
+		const context = canvas.getContext("2d")!;
+		context.drawImage(media, 0, 0);
+		const name = (x: number) => {
+			const [r, g, b] = context.getImageData(
+				Math.round(canvas.width * x),
+				Math.round(canvas.height * 0.65),
+				1,
+				1,
+			).data;
+			if (
+				Math.abs(r - 218) < 25 &&
+				Math.abs(g - 237) < 25 &&
+				Math.abs(b - 247) < 25
+			)
+				return "empty";
+			if (r > 180 && g < 70 && b < 70) return "red";
+			if (g > 180 && r < 70 && b < 70) return "green";
+			if (b > 180 && r < 70 && g < 70) return "blue";
+			if (r > 180 && g > 180 && b < 70) return "yellow";
+			return `rgb(${r},${g},${b})`;
+		};
+		return boxes.map((x) => `${name(x - 0.06)}|${name(x + 0.06)}`);
+	}, DEFAULT_FRAME_BOXES);
+}
+
+async function controlCameraFill(page: Page) {
+	await page.addInitScript(() => {
+		const state = { fill: "" };
+		Object.assign(window, { cameraFill: state });
+		navigator.mediaDevices.getUserMedia = async () => {
+			const source = document.createElement("canvas");
+			source.width = 320;
+			source.height = 180;
+			const context = source.getContext("2d")!;
+			const paint = () => {
+				if (state.fill) {
+					context.fillStyle = state.fill;
+					context.fillRect(0, 0, 320, 180);
+				} else {
+					context.fillStyle = "#00ff00";
+					context.fillRect(0, 0, 160, 180);
+					context.fillStyle = "#ff0000";
+					context.fillRect(160, 0, 160, 180);
+				}
+				requestAnimationFrame(paint);
+			};
+			paint();
+			return source.captureStream(10);
+		};
+	});
+	return (fill: string) =>
+		page.evaluate((fill) => {
+			(window as Window & { cameraFill?: { fill: string } }).cameraFill!.fill =
+				fill;
+		}, fill);
+}
+
+test("camera interruption mid-sequence resets every box and reconnect restores capture", async ({
 	page,
 }) => {
+	test.slow();
 	let uploads = 0;
 	await page.route("**/api/photos", (route) => {
 		uploads++;
@@ -1490,6 +1580,8 @@ test("camera interruption cancels countdown and reconnect restores capture", asy
 		page.getByRole("button", { name: "Take a photo" }),
 	).toBeEnabled();
 	await page.getByRole("button", { name: "Take a photo" }).click();
+	const progress = page.locator(".preview").getByRole("status");
+	await expect(progress).toHaveText("Photo 2 of 3", { timeout: 10_000 });
 	await page.locator("video").evaluate((video: HTMLVideoElement) => {
 		const stream = video.srcObject;
 		if (!(stream instanceof MediaStream))
@@ -1499,13 +1591,14 @@ test("camera interruption cancels countdown and reconnect restores capture", asy
 	await expect(
 		page.getByRole("alert").filter({ hasText: "Camera paused" }),
 	).toBeVisible();
+	await expect(progress).toHaveCount(0);
 	await expect(
 		page.getByRole("button", { name: "Take a photo" }),
 	).toBeDisabled();
 	await expect(
 		page.getByRole("button", { name: "Connect", exact: true }),
 	).toBeEnabled();
-	await page.waitForTimeout(3200);
+	await page.waitForTimeout(6200);
 	expect(uploads).toBe(0);
 	expect(
 		await page.evaluate(
@@ -1514,76 +1607,66 @@ test("camera interruption cancels countdown and reconnect restores capture", asy
 					window as Window & { boothAudioEvents?: { kind: string }[] }
 				).boothAudioEvents?.filter((event) => event.kind === "shutter").length,
 		),
-	).toBe(0);
+	).toBe(1);
 	await expect(page.getByAltText("A moment at the baby shower")).toHaveCount(0);
+	await expect(page.getByRole("button", { name: "Save photo" })).toHaveCount(0);
 	await page.getByRole("button", { name: "Connect", exact: true }).click();
 	await expect(
 		page.getByRole("button", { name: "Take a photo" }),
 	).toBeEnabled();
+	await expect
+		.poll(() => boxColors(page))
+		.toEqual(["red|green", "empty|empty", "empty|empty"]);
 });
 
-test("frame and camera appear in preview and are automatically uploaded without a download step", async ({
+test("three-box frame shoots each box in turn, then reviews, retakes and saves one photo", async ({
 	page,
 }) => {
+	test.slow();
+	const setCameraFill = await controlCameraFill(page);
 	const uploaded = await mockSavedCapture(page);
+	let uploads = 0;
+	page.on("request", (request) => {
+		if (request.method() === "POST" && request.url().endsWith("/api/photos"))
+			uploads++;
+	});
 	await page.goto("/");
 	await page.getByRole("button", { name: "Connect", exact: true }).click();
 	await expect(page.getByText("LIVE", { exact: true })).toBeVisible();
 	const capture = page.getByRole("button", { name: "Take a photo" });
 	await expect(capture).toBeEnabled();
+	// Only the next box shows the (mirrored) camera; the rest stay empty.
 	await expect
-		.poll(() =>
-			page
-				.getByLabel("Live photo booth preview")
-				.evaluate((source: HTMLCanvasElement) => {
-					const canvas = document.createElement("canvas");
-					canvas.width = source.width;
-					canvas.height = source.height;
-					const ctx = canvas.getContext("2d")!;
-					ctx.drawImage(source, 0, 0);
-					const cameraLeft = ctx.getImageData(
-						Math.round(source.width * 0.35),
-						Math.round(source.height * 0.5),
-						1,
-						1,
-					).data;
-					const cameraRight = ctx.getImageData(
-						Math.round(source.width * 0.65),
-						Math.round(source.height * 0.5),
-						1,
-						1,
-					).data;
-					const border = ctx.getImageData(5, 5, 1, 1).data;
-					const openingBehindText = ctx.getImageData(
-						Math.round((source.width * 710) / 1153),
-						Math.round((source.height * 145) / 768),
-						1,
-						1,
-					).data;
-					return (
-						cameraLeft[0] > 200 &&
-						cameraLeft[1] < 30 &&
-						cameraRight[1] > 200 &&
-						cameraRight[0] < 30 &&
-						openingBehindText[1] > 200 &&
-						openingBehindText[0] < 30 &&
-						!(border[1] > 200 && border[0] < 30)
-					);
-				}),
-		)
-		.toBe(true);
+		.poll(() => boxColors(page))
+		.toEqual(["red|green", "empty|empty", "empty|empty"]);
+
 	await capture.click();
+	const progress = page.locator(".preview").getByRole("status");
+	await expect(progress).toHaveText("Photo 1 of 3");
 	for (const value of [5, 4, 3, 2, 1]) {
 		await expect(
 			page.locator(".preview").getByText(String(value), { exact: true }),
 		).toBeVisible();
 	}
-	await expect(
-		page.getByAltText("Baby-shower memory captured.jpg"),
-	).toBeVisible({
-		timeout: 10_000,
-	});
-	await expect(page.getByText("Saved privately for the host.")).toBeVisible();
+	await expect(progress).toHaveText("Photo 2 of 3");
+	await setCameraFill("#0000ff");
+	// The first shot stays frozen while the second box goes live.
+	await expect
+		.poll(() => boxColors(page))
+		.toEqual(["red|green", "blue|blue", "empty|empty"]);
+	await expect(progress).toHaveText("Photo 3 of 3", { timeout: 10_000 });
+	await setCameraFill("#ffff00");
+	await expect
+		.poll(() => boxColors(page))
+		.toEqual(["red|green", "blue|blue", "yellow|yellow"]);
+
+	const save = page.getByRole("button", { name: "Save photo" });
+	await expect(save).toBeVisible({ timeout: 10_000 });
+	await expect(capture).toHaveCount(0);
+	await expect
+		.poll(() => boxColors(page, "photo"))
+		.toEqual(["red|green", "blue|blue", "yellow|yellow"]);
+	expect(uploads).toBe(0);
 	const sounds = await page.evaluate(
 		() =>
 			(
@@ -1598,13 +1681,11 @@ test("frame and camera appear in preview and are automatically uploaded without 
 				}
 			).boothAudioEvents,
 	);
+	const shot = [...Array(5).fill("countdown"), "shutter"];
 	expect(sounds?.map((sound) => sound.kind)).toEqual([
-		"countdown",
-		"countdown",
-		"countdown",
-		"countdown",
-		"countdown",
-		"shutter",
+		...shot,
+		...shot,
+		...shot,
 	]);
 	expect(sounds?.slice(0, 5).every((sound) => sound.frequency === 880)).toBe(
 		true,
@@ -1617,61 +1698,35 @@ test("frame and camera appear in preview and are automatically uploaded without 
 		expect(sounds![index].time - sounds![index - 1].time).toBeGreaterThan(700);
 	}
 	expect(sounds![5].time - sounds![0].time).toBeGreaterThanOrEqual(4_900);
-	const matches = await page
-		.getByAltText("Baby-shower memory captured.jpg")
-		.evaluate((image: HTMLImageElement) => {
-			const canvas = document.createElement("canvas");
-			canvas.width = image.naturalWidth;
-			canvas.height = image.naturalHeight;
-			const context = canvas.getContext("2d")!;
-			context.drawImage(image, 0, 0);
-			const left = context.getImageData(
-				Math.round(canvas.width * 0.35),
-				Math.round(canvas.height * 0.5),
-				1,
-				1,
-			).data;
-			const right = context.getImageData(
-				Math.round(canvas.width * 0.65),
-				Math.round(canvas.height * 0.5),
-				1,
-				1,
-			).data;
-			const border = context.getImageData(5, 5, 1, 1).data;
-			const openingBehindText = context.getImageData(
-				Math.round((canvas.width * 710) / 1153),
-				Math.round((canvas.height * 145) / 768),
-				1,
-				1,
-			).data;
-			return (
-				left[0] > 180 &&
-				left[1] < 50 &&
-				right[1] > 180 &&
-				right[0] < 50 &&
-				openingBehindText[1] > 180 &&
-				openingBehindText[0] < 50 &&
-				!(border[1] > 180 && border[0] < 50)
-			);
-		});
-	expect(matches).toBe(true);
-	const capturedBytes = await page
-		.getByAltText("Baby-shower memory captured.jpg")
-		.evaluate(async (image: HTMLImageElement) => {
-			const response = await fetch(image.src);
-			return Array.from(new Uint8Array(await response.arrayBuffer()));
-		});
-	expect(Buffer.from(capturedBytes)).toEqual(uploaded());
+
+	await page.getByRole("button", { name: "Retake" }).click();
+	await expect(progress).toHaveText("Photo 1 of 3");
+	await expect(page.getByAltText("A moment at the baby shower")).toHaveCount(0);
+	await expect
+		.poll(() => boxColors(page))
+		.toEqual(["yellow|yellow", "empty|empty", "empty|empty"]);
+	await setCameraFill("");
+	await savePhoto(page);
+	await expect(
+		page.getByAltText("Baby-shower memory captured.jpg"),
+	).toBeVisible({ timeout: 10_000 });
+	await expect(page.getByText("Saved privately for the host.")).toBeVisible();
 	await expect(page.getByRole("link", { name: "Download photo" })).toHaveCount(
 		0,
 	);
+	expect(uploads).toBe(1);
+	expect(uploaded()!.subarray(0, 3)).toEqual(Buffer.from([0xff, 0xd8, 0xff]));
 	await expect(capture).toBeEnabled();
+	await expect
+		.poll(() => boxColors(page))
+		.toEqual(["red|green", "empty|empty", "empty|empty"]);
 });
 
 for (const failure of ["unconfigured", "offline"]) {
 	test(`download is a fallback when photo saving is ${failure}, and retry can recover`, async ({
 		page,
 	}) => {
+		test.slow();
 		let attempts = 0;
 		let uploaded: Buffer | null = null;
 		await page.route("**/api/photos", async (route) => {
@@ -1698,6 +1753,7 @@ for (const failure of ["unconfigured", "offline"]) {
 		if (failure === "offline")
 			await page.getByRole("button", { name: "Photo mode" }).click();
 		await page.getByRole("button", { name: "Take a photo" }).click();
+		await savePhoto(page);
 		await expect(
 			page.getByRole("alert").filter({ hasText: "Not saved online:" }),
 		).toBeVisible({ timeout: 10_000 });
@@ -1717,6 +1773,7 @@ for (const failure of ["unconfigured", "offline"]) {
 test("oversized captures offer download without sending a request to Vercel", async ({
 	page,
 }) => {
+	test.slow();
 	let attempts = 0;
 	await page.route("**/api/photos", (route) => {
 		attempts++;
@@ -1735,6 +1792,7 @@ test("oversized captures offer download without sending a request to Vercel", as
 		page.getByRole("button", { name: "Take a photo" }),
 	).toBeEnabled();
 	await page.getByRole("button", { name: "Take a photo" }).click();
+	await savePhoto(page);
 	await expect(
 		page.getByRole("alert").filter({ hasText: "4 MB upload limit" }),
 	).toBeVisible({ timeout: 10_000 });
@@ -1747,6 +1805,7 @@ test("oversized captures offer download without sending a request to Vercel", as
 test("saving prevents another capture and an unconfirmed save can be discarded", async ({
 	page,
 }) => {
+	test.slow();
 	let release: (() => void) | undefined;
 	const pending = new Promise<void>((resolve) => {
 		release = resolve;
@@ -1761,6 +1820,7 @@ test("saving prevents another capture and an unconfirmed save can be discarded",
 		page.getByRole("button", { name: "Take a photo" }),
 	).toBeEnabled();
 	await page.getByRole("button", { name: "Take a photo" }).click();
+	await savePhoto(page);
 	await expect(page.getByText("Saving photo…")).toBeVisible({
 		timeout: 10_000,
 	});
@@ -1794,6 +1854,7 @@ test("saving prevents another capture and an unconfirmed save can be discarded",
 test("saving optimistically reserves one upload and rolls back when the save fails", async ({
 	page,
 }) => {
+	test.slow();
 	let release: (() => void) | undefined;
 	const pending = new Promise<void>((resolve) => {
 		release = resolve;
@@ -1814,6 +1875,7 @@ test("saving optimistically reserves one upload and rolls back when the save fai
 		page.getByRole("button", { name: "Take a photo" }),
 	).toBeEnabled();
 	await page.getByRole("button", { name: "Take a photo" }).click();
+	await savePhoto(page);
 	await expect(page.getByText("Saving photo…")).toBeVisible({
 		timeout: 10_000,
 	});
@@ -1859,7 +1921,7 @@ test("the camera shows through the frame window and green keying stays optional"
 	const sample = () =>
 		page
 			.getByLabel("Live photo booth preview")
-			.evaluate((source: HTMLCanvasElement) => {
+			.evaluate((source: HTMLCanvasElement, x) => {
 				const canvas = document.createElement("canvas");
 				canvas.width = source.width;
 				canvas.height = source.height;
@@ -1867,13 +1929,13 @@ test("the camera shows through the frame window and green keying stays optional"
 				context.drawImage(source, 0, 0);
 				return Array.from(
 					context.getImageData(
-						Math.round(source.width * 0.35),
-						Math.round(source.height * 0.5),
+						Math.round(source.width * x),
+						Math.round(source.height * 0.65),
 						1,
 						1,
 					).data,
 				);
-			});
+			}, DEFAULT_FRAME_BOXES[0]);
 	// Without green keying the camera is visible through the frame's transparent window.
 	await expect
 		.poll(async () => {
@@ -2227,6 +2289,7 @@ for (const interim of [false, true]) {
 	test(`voice capture starts one countdown and can capture again after saving (${interim ? "interim" : "final"} results)`, async ({
 		page,
 	}) => {
+		test.slow();
 		await page.addInitScript(() => {
 			class FakeRecognition {
 				continuous = false;
@@ -2317,6 +2380,7 @@ for (const interim of [false, true]) {
 		await expect(
 			page.getByRole("button", { name: "Get ready" }),
 		).toBeDisabled();
+		await savePhoto(page);
 		await expect(page.getByText("Saved privately for the host.")).toBeVisible({
 			timeout: 10_000,
 		});
@@ -2330,6 +2394,7 @@ for (const interim of [false, true]) {
 			).toBeEnabled();
 		}
 		await speak("capture");
+		await savePhoto(page);
 		await expect(page.getByText("Saved privately for the host.")).toBeVisible({
 			timeout: 10_000,
 		});
@@ -2341,15 +2406,16 @@ for (const interim of [false, true]) {
 					.boothAudioEvents,
 		);
 		expect(audio?.filter((event) => event.kind === "countdown")).toHaveLength(
-			10,
+			30,
 		);
-		expect(audio?.filter((event) => event.kind === "shutter")).toHaveLength(2);
+		expect(audio?.filter((event) => event.kind === "shutter")).toHaveLength(6);
 	});
 }
 
 test("audio failure is explicit but does not prevent capture and saving", async ({
 	page,
 }) => {
+	test.slow();
 	await page.addInitScript(() => {
 		Object.defineProperty(window, "AudioContext", {
 			value: class {
@@ -2371,6 +2437,7 @@ test("audio failure is explicit but does not prevent capture and saving", async 
 		page.getByRole("button", { name: "Take a photo" }),
 	).toBeEnabled();
 	await page.getByRole("button", { name: "Take a photo" }).click();
+	await savePhoto(page);
 	await expect(page.getByText("Saved privately for the host.")).toBeVisible({
 		timeout: 10_000,
 	});

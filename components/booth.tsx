@@ -50,6 +50,8 @@ export function Booth({ backgrounds: defaults }: { backgrounds: Backdrop[] }) {
 		upload,
 		uploadView,
 		discard,
+		save,
+		retake,
 		prepareSound,
 	} = useBoothController(backgrounds);
 	const galleryVisible = useStore(store, (state) => state.galleryVisible);
@@ -184,6 +186,8 @@ export function Booth({ backgrounds: defaults }: { backgrounds: Backdrop[] }) {
 						voice={voice}
 						onCapture={startCountdown}
 						onDiscard={discard}
+						onSave={save}
+						onRetake={retake}
 						onUpload={upload}
 						upload={uploadView}
 						canCapture={canCapture}

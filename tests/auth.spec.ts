@@ -414,6 +414,7 @@ test("backdrop upload is admin-only, validates images, and keeps shared reads pr
 });
 
 test("booth shows last upload and disables manual and voice capture at zero", async ({ page, backend }) => {
+  test.slow();
   await page.addInitScript(() => {
     class FakeRecognition {
       continuous = false;
@@ -436,6 +437,7 @@ test("booth shows last upload and disables manual and voice capture at zero", as
   await expect(page.getByText("PHOTO UPLOAD CODE", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await page.getByRole("button", { name: "Take a photo" }).click();
+  await page.getByRole("button", { name: "Save photo" }).click({ timeout: 30_000 });
   await expect(page.getByText("Saved privately for the host.")).toBeVisible({ timeout: 10_000 });
   await expect(page.getByText("0 of 20 photo uploads remaining")).toBeVisible();
   await expect(page.getByRole("button", { name: "Retake", exact: true })).toHaveCount(0);

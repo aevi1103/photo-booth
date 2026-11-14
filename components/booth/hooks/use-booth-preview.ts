@@ -73,11 +73,16 @@ export function useBoothPreview(store: BoothStore) {
 		image.onload = () => {
 			if (cancelled || !compositorRef.current) return;
 			try {
-				const frameSize = compositorRef.current.setFrame(image);
+				const { openings, ...frameSize } =
+					compositorRef.current.setFrame(image);
 				const video = videoRef.current;
 				if (video && video.readyState >= 2)
 					compositorRef.current.draw(video, settingsRef.current);
-				store.setState({ frameReady: true, frameSize });
+				store.setState({
+					frameReady: true,
+					frameSize,
+					frameOpenings: openings,
+				});
 			} catch (error) {
 				store.setState({
 					frameError:

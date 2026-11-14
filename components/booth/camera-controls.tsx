@@ -25,8 +25,10 @@ export function CameraControls({
 	className: string;
 	accessibleName?: string;
 }) {
-	const { devices, deviceId, connecting, countdown, photo } = useStore(store);
-	const disabled = connecting || countdown !== null || photo !== null;
+	const { devices, deviceId, connecting, countdown, shotIndex, photo } =
+		useStore(store);
+	const disabled =
+		connecting || countdown !== null || shotIndex !== null || photo !== null;
 	const cameraOptions = [
 		{ value: "", label: "Default camera" },
 		{ value: "facing:user", label: "Front camera (selfie)" },

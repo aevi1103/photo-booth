@@ -1,5 +1,9 @@
-import { getFrameOpening } from "@/lib/frame-geometry";
 import { BACKDROP_DIMENSION_ERROR, MAX_BACKDROP_PIXELS } from "@/lib/backdrops";
+import {
+	getFrameOpenings,
+	MAX_FRAME_OPENINGS,
+	type Opening,
+} from "@/lib/frame-geometry";
 
 type Settings = {
 	color: string;
@@ -21,28 +25,42 @@ varying vec2 uv;
 uniform sampler2D camera;
 uniform sampler2D background;
 uniform sampler2D frameImage;
+uniform sampler2D shot0;
+uniform sampler2D shot1;
+uniform sampler2D shot2;
 uniform vec3 keyColor;
 uniform float threshold;
 uniform float softness;
 uniform float mirror;
 uniform float greenScreen;
-uniform vec2 cameraScale;
-uniform vec4 cameraRect;
+uniform vec4 slotRects[3];
+uniform vec2 slotScales[3];
+// 0 = empty, 1 = live camera, 2 = frozen shot.
+uniform float slotModes[3];
 vec2 chroma(vec3 c) {
   c = c / max(c.r + c.g + c.b, 0.001);
   return vec2(c.b - c.g, c.r - c.g);
 }
-void main() {
-  vec2 openingUv = (uv - cameraRect.xy) / cameraRect.zw;
-  vec2 cameraUv = (openingUv - 0.5) * cameraScale + 0.5;
+vec4 slot(sampler2D shot, vec4 rect, vec2 scale, float mode) {
+  vec2 openingUv = (uv - rect.xy) / rect.zw;
+  if (mode < 0.5 || openingUv.x < 0.0 || openingUv.x > 1.0 || openingUv.y < 0.0 || openingUv.y > 1.0) {
+    return vec4(0.0);
+  }
+  vec2 cameraUv = (openingUv - 0.5) * scale + 0.5;
   cameraUv.x = mix(cameraUv.x, 1.0 - cameraUv.x, mirror);
-  vec3 foreground = texture2D(camera, cameraUv).rgb;
+  vec3 color = mode > 1.5 ? texture2D(shot, cameraUv).rgb : texture2D(camera, cameraUv).rgb;
+  return vec4(color, 1.0);
+}
+void main() {
   vec3 backdrop = texture2D(background, uv).rgb;
-  float distanceToKey = distance(chroma(foreground), chroma(keyColor));
-  float alpha = mix(1.0, smoothstep(threshold, threshold + softness, distanceToKey), greenScreen);
-  vec3 video = mix(backdrop, foreground, alpha);
-  if (openingUv.x < 0.0 || openingUv.x > 1.0 || openingUv.y < 0.0 || openingUv.y > 1.0) {
-    video = backdrop;
+  vec4 foreground = slot(shot0, slotRects[0], slotScales[0], slotModes[0]);
+  if (foreground.a < 0.5) foreground = slot(shot1, slotRects[1], slotScales[1], slotModes[1]);
+  if (foreground.a < 0.5) foreground = slot(shot2, slotRects[2], slotScales[2], slotModes[2]);
+  vec3 video = backdrop;
+  if (foreground.a > 0.5) {
+    float distanceToKey = distance(chroma(foreground.rgb), chroma(keyColor));
+    float alpha = mix(1.0, smoothstep(threshold, threshold + softness, distanceToKey), greenScreen);
+    video = mix(backdrop, foreground.rgb, alpha);
   }
   vec4 frame = texture2D(frameImage, uv);
   gl_FragColor = vec4(mix(video, frame.rgb, frame.a), 1.0);
@@ -132,13 +150,43 @@ export function createCompositor(canvas: HTMLCanvasElement) {
 	const videoTexture = createTexture(context, 0);
 	const backgroundTexture = createTexture(context, 1);
 	const frameTexture = createTexture(context, 2);
+	const shotTextures = Array.from(
+		{ length: MAX_FRAME_OPENINGS },
+		(_, index) => {
+			const texture = createTexture(context, 3 + index);
+			context.texImage2D(
+				context.TEXTURE_2D,
+				0,
+				context.RGBA,
+				1,
+				1,
+				0,
+				context.RGBA,
+				context.UNSIGNED_BYTE,
+				new Uint8Array([0, 0, 0, 255]),
+			);
+			return texture;
+		},
+	);
 	context.uniform1i(context.getUniformLocation(program, "camera"), 0);
 	context.uniform1i(context.getUniformLocation(program, "background"), 1);
 	context.uniform1i(context.getUniformLocation(program, "frameImage"), 2);
+	shotTextures.forEach((_, index) => {
+		context.uniform1i(
+			context.getUniformLocation(program, `shot${index}`),
+			3 + index,
+		);
+	});
+	const slotRects = context.getUniformLocation(program, "slotRects");
+	const slotScales = context.getUniformLocation(program, "slotScales");
+	const slotModes = context.getUniformLocation(program, "slotModes");
 	context.pixelStorei(context.UNPACK_FLIP_Y_WEBGL, true);
 	let frameWidth = 0;
 	let frameHeight = 0;
-	let openingAspect = 1;
+	let openings: Opening[] = [];
+	// Camera aspect ratio of each frozen shot; null while the box is not captured.
+	let frozenAspects: (number | null)[] = [];
+	let activeSlot: number | null = 0;
 	context.activeTexture(context.TEXTURE1);
 	context.bindTexture(context.TEXTURE_2D, backgroundTexture);
 	context.texImage2D(
@@ -188,7 +236,7 @@ export function createCompositor(canvas: HTMLCanvasElement) {
 				);
 			if (image.naturalWidth * image.naturalHeight > MAX_BACKDROP_PIXELS)
 				throw new Error(BACKDROP_DIMENSION_ERROR);
-			const opening = getFrameOpening(image);
+			const frameOpenings = getFrameOpenings(image);
 			context.activeTexture(context.TEXTURE2);
 			context.bindTexture(context.TEXTURE_2D, frameTexture);
 			context.texImage2D(
@@ -212,16 +260,53 @@ export function createCompositor(canvas: HTMLCanvasElement) {
 				throw new Error(
 					"Could not render that frame at its original size. Choose a smaller design.",
 				);
-			openingAspect =
-				(frameWidth * opening.width) / (frameHeight * opening.height);
-			context.uniform4f(
-				context.getUniformLocation(program, "cameraRect"),
-				opening.x,
-				1 - opening.y - opening.height,
-				opening.width,
-				opening.height,
+			openings = frameOpenings;
+			frozenAspects = openings.map(() => null);
+			activeSlot = 0;
+			const rects = new Float32Array(MAX_FRAME_OPENINGS * 4);
+			openings.forEach((opening, index) => {
+				rects.set(
+					[
+						opening.x,
+						1 - opening.y - opening.height,
+						opening.width,
+						opening.height,
+					],
+					index * 4,
+				);
+			});
+			context.uniform4fv(slotRects, rects);
+			return { width: frameWidth, height: frameHeight, openings };
+		},
+		/** Shows the live camera in one box (or none); captured boxes stay frozen. */
+		setActiveSlot(index: number | null) {
+			activeSlot = index;
+		},
+		/** Freezes the current camera frame into a box. */
+		freezeSlot(index: number, video: HTMLVideoElement) {
+			if (index < 0 || index >= openings.length)
+				throw new Error("That photo box is not in the frame.");
+			if (!video.videoWidth || !video.videoHeight)
+				throw new Error("The camera is not ready yet.");
+			context.activeTexture(context.TEXTURE3 + index);
+			context.bindTexture(context.TEXTURE_2D, shotTextures[index]);
+			context.texImage2D(
+				context.TEXTURE_2D,
+				0,
+				context.RGBA,
+				context.RGBA,
+				context.UNSIGNED_BYTE,
+				video,
 			);
-			return { width: frameWidth, height: frameHeight };
+			if (context.getError() !== context.NO_ERROR)
+				throw new Error("Could not capture the photo.");
+			frozenAspects[index] = video.videoWidth / video.videoHeight;
+			if (activeSlot === index) activeSlot = null;
+		},
+		/** Clears every captured box and shows the camera in the first one. */
+		resetSlots() {
+			frozenAspects = openings.map(() => null);
+			activeSlot = 0;
 		},
 		draw(video: HTMLVideoElement, settings: Settings) {
 			if (
@@ -269,17 +354,26 @@ export function createCompositor(canvas: HTMLCanvasElement) {
 				settings.greenScreen ? 1 : 0,
 			);
 			const cameraAspect = video.videoWidth / video.videoHeight;
-			context.uniform2f(
-				context.getUniformLocation(program, "cameraScale"),
-				Math.min(1, openingAspect / cameraAspect),
-				Math.min(1, cameraAspect / openingAspect),
-			);
+			const scales = new Float32Array(MAX_FRAME_OPENINGS * 2);
+			const modes = new Float32Array(MAX_FRAME_OPENINGS);
+			openings.forEach((opening, index) => {
+				const openingAspect =
+					(frameWidth * opening.width) / (frameHeight * opening.height);
+				const frozen = frozenAspects[index] ?? null;
+				const aspect = frozen ?? cameraAspect;
+				scales[index * 2] = Math.min(1, openingAspect / aspect);
+				scales[index * 2 + 1] = Math.min(1, aspect / openingAspect);
+				modes[index] = frozen !== null ? 2 : index === activeSlot ? 1 : 0;
+			});
+			context.uniform2fv(slotScales, scales);
+			context.uniform1fv(slotModes, modes);
 			context.drawArrays(context.TRIANGLE_STRIP, 0, 4);
 		},
 		destroy() {
 			context.deleteTexture(videoTexture);
 			context.deleteTexture(backgroundTexture);
 			context.deleteTexture(frameTexture);
+			for (const texture of shotTextures) context.deleteTexture(texture);
 			context.deleteBuffer(buffer);
 			context.deleteProgram(program);
 		},

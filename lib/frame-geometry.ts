@@ -1,7 +1,21 @@
 export type FrameSize = { width: number; height: number };
-type Opening = { x: number; y: number; width: number; height: number };
+export type Opening = { x: number; y: number; width: number; height: number };
 
-export function getFrameOpening(image: HTMLImageElement): Opening {
+// The compositor has one frozen-shot texture per opening.
+export const MAX_FRAME_OPENINGS = 3;
+// Transparent gaps smaller than this share of the largest opening are artwork
+// details (e.g. inside lettering), not photo boxes.
+const MIN_OPENING_SHARE = 0.2;
+
+type Region = { area: number; interior: boolean; opening: Opening };
+
+// Left-to-right for side-by-side boxes, top-to-bottom for stacked ones.
+function readingOrder(a: Opening, b: Opening) {
+	const overlapsHorizontally = a.x < b.x + b.width && b.x < a.x + a.width;
+	return overlapsHorizontally ? a.y - b.y : a.x - b.x;
+}
+
+export function getFrameOpenings(image: HTMLImageElement): Opening[] {
 	const { naturalWidth: width, naturalHeight: height } = image;
 	const canvas = document.createElement("canvas");
 	canvas.width = width;
@@ -12,11 +26,10 @@ export function getFrameOpening(image: HTMLImageElement): Opening {
 	context.drawImage(image, 0, 0);
 	const { data } = context.getImageData(0, 0, width, height);
 	const queue = new Uint32Array(width * height);
-	let largest: { area: number; opening: Opening } | undefined;
-	let interior: typeof largest;
+	const regions: Region[] = [];
 
 	for (let pixel = 0; pixel < width * height; pixel++) {
-		// Ignore nearly opaque antialiasing when finding the photo opening.
+		// Ignore nearly opaque antialiasing when finding the photo openings.
 		if (data[pixel * 4 + 3] >= 128) continue;
 		let head = 0;
 		let tail = 1;
@@ -44,25 +57,31 @@ export function getFrameOpening(image: HTMLImageElement): Opening {
 			if (y > 0) visit(index - width);
 			if (y < height - 1) visit(index + width);
 		}
-		const region = {
+		regions.push({
 			area: tail,
+			interior: left > 0 && top > 0 && right < width - 1 && bottom < height - 1,
 			opening: {
 				x: left / width,
 				y: top / height,
 				width: (right - left + 1) / width,
 				height: (bottom - top + 1) / height,
 			},
-		};
-		if (!largest || region.area > largest.area) largest = region;
-		if (
-			left > 0 &&
-			top > 0 &&
-			right < width - 1 &&
-			bottom < height - 1 &&
-			(!interior || region.area > interior.area)
-		)
-			interior = region;
+		});
 	}
 
-	return (interior ?? largest)?.opening ?? { x: 0, y: 0, width: 1, height: 1 };
+	const interior = regions.filter((region) => region.interior);
+	if (!interior.length) {
+		const largest = regions.reduce<Region | undefined>(
+			(best, region) => (!best || region.area > best.area ? region : best),
+			undefined,
+		);
+		return [largest?.opening ?? { x: 0, y: 0, width: 1, height: 1 }];
+	}
+	const largestArea = Math.max(...interior.map((region) => region.area));
+	return interior
+		.filter((region) => region.area >= largestArea * MIN_OPENING_SHARE)
+		.sort((a, b) => b.area - a.area)
+		.slice(0, MAX_FRAME_OPENINGS)
+		.map((region) => region.opening)
+		.sort(readingOrder);
 }

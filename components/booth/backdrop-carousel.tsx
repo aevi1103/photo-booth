@@ -19,7 +19,7 @@ export function BackdropCarousel({
 	store: BoothStore;
 	backgrounds: Backdrop[];
 }) {
-	const { background, countdown, photo } = useStore(store);
+	const { background, countdown, shotIndex, photo } = useStore(store);
 	const [isVertical, setIsVertical] = useState(false);
 	useEffect(() => {
 		const media = window.matchMedia(
@@ -62,7 +62,9 @@ export function BackdropCarousel({
 									type="button"
 									className={`background-option block w-full min-w-0 cursor-pointer overflow-hidden rounded-[9px] border-2 text-left disabled:cursor-not-allowed disabled:opacity-60 ${background === item.url ? "selected border-[#80b7d1]" : "border-[#edf4f7]"}`}
 									aria-pressed={background === item.url}
-									disabled={countdown !== null || photo !== null}
+									disabled={
+										countdown !== null || shotIndex !== null || photo !== null
+									}
 									onClick={() =>
 										store.setState((state) => ({
 											background: item.url,
