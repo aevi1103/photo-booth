@@ -323,7 +323,7 @@ export function BoothPreview({
 				</p>
 			)}
 			<div
-				className={`actions mt-5 flex flex-wrap justify-center gap-2.5 min-[801px]:mt-3 [&_a]:min-h-11.5 [&_a]:rounded-[10px] [&_a]:px-[clamp(8px,2vw,23px)] [&_[data-slot=button]]:min-h-[46px] [&_[data-slot=button]]:rounded-[10px] [&_[data-slot=button]]:px-[clamp(8px,2vw,23px)] ${isPhotoMode ? "absolute right-3 bottom-[max(20px,env(safe-area-inset-bottom))] left-3 z-[2] !m-0" : ""}`}
+				className={`actions mt-5 flex flex-wrap justify-center gap-2.5 min-[801px]:mt-3 [&_a]:min-h-11.5 [&_a]:rounded-[10px] [&_a]:px-[clamp(8px,2vw,23px)] [&_[data-slot=button]]:min-h-[46px] [&_[data-slot=button]]:rounded-[10px] [&_[data-slot=button]]:px-[clamp(8px,2vw,23px)] ${isPhotoMode ? "absolute right-3 bottom-[max(20px,env(safe-area-inset-bottom))] left-3 z-[2] !m-0" : "relative z-10"}`}
 			>
 				{!photo ? (
 					<Button

@@ -6,6 +6,17 @@
         "-y",
         "@playwright/mcp@latest"
       ]
+    },
+    "shadcn": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "shadcn@latest",
+        "mcp"
+      ],
+      "tools": [
+        "*"
+      ]
     }
   }
 }

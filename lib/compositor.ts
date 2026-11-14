@@ -1,4 +1,5 @@
 import { getFrameOpening } from "@/lib/frame-geometry";
+import { BACKDROP_DIMENSION_ERROR, MAX_BACKDROP_PIXELS } from "@/lib/backdrops";
 
 type Settings = {
 	color: string;
@@ -185,6 +186,8 @@ export function createCompositor(canvas: HTMLCanvasElement) {
 				throw new Error(
 					"That frame is too large for this device. Choose a smaller design.",
 				);
+			if (image.naturalWidth * image.naturalHeight > MAX_BACKDROP_PIXELS)
+				throw new Error(BACKDROP_DIMENSION_ERROR);
 			const opening = getFrameOpening(image);
 			context.activeTexture(context.TEXTURE2);
 			context.bindTexture(context.TEXTURE_2D, frameTexture);

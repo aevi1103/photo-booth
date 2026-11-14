@@ -21,6 +21,7 @@ type Backend = {
   db: PGlite;
   objects: Map<string, Buffer>;
   storageError: number | null;
+  photoDownloads: number;
   listError: boolean;
   signError: boolean;
 };
@@ -37,7 +38,7 @@ export const test = base.extend<{ backend: Backend }, { supabase: Backend }>({
       create table storage.objects(id uuid primary key default gen_random_uuid(), bucket_id text, name text, created_at timestamptz default now());
     `);
     await db.exec(await readFile("supabase/setup.sql", "utf8"));
-    const backend: Backend = { db, objects: new Map(), storageError: null, listError: false, signError: false };
+    const backend: Backend = { db, objects: new Map(), storageError: null, photoDownloads: 0, listError: false, signError: false };
     const server = createServer(async (request, response) => {
       try {
         const url = new URL(request.url ?? "/", "http://127.0.0.1:9999");
@@ -94,6 +95,23 @@ export const test = base.extend<{ backend: Backend }, { supabase: Backend }>({
           const result = await db.query("select id, name, created_at from storage.objects where bucket_id = 'backdrops' order by name limit $1 offset $2", [body.limit, body.offset]);
           response.end(JSON.stringify(result.rows)); return;
         }
+        if (url.pathname === "/storage/v1/object/list/photos") {
+          if (backend.storageError || backend.listError) {
+            response.statusCode = backend.storageError ?? 503;
+            response.end(JSON.stringify({ message: "Test listing failure" })); return;
+          }
+          const prefix = String(body.prefix ?? "");
+          const name = String(body.search ?? "");
+          const path = prefix ? `${prefix}/${name}` : name;
+          const result = await db.query<{ id: string; name: string; created_at: string }>(
+            "select id, name, created_at from storage.objects where bucket_id = 'photos' and name = $1",
+            [path],
+          );
+          response.end(JSON.stringify(result.rows.map((item) => ({
+            ...item,
+            name: prefix ? item.name.slice(prefix.length + 1) : item.name,
+          })))); return;
+        }
         if (url.pathname.startsWith("/storage/v1/object/backdrops/")) {
           const path = decodeURIComponent(url.pathname.slice("/storage/v1/object/backdrops/".length));
           if (request.method === "GET") {
@@ -116,6 +134,7 @@ export const test = base.extend<{ backend: Backend }, { supabase: Backend }>({
           }
           const path = decodeURIComponent(url.pathname.slice("/storage/v1/object/photos/".length));
           if (request.method === "GET") {
+            backend.photoDownloads++;
             const image = backend.objects.get(path);
             if (!image) {
               response.statusCode = 404;
@@ -164,6 +183,7 @@ export const test = base.extend<{ backend: Backend }, { supabase: Backend }>({
     `);
     supabase.objects.clear();
     supabase.storageError = null;
+    supabase.photoDownloads = 0;
     supabase.listError = false;
     supabase.signError = false;
     await runFixture(supabase);

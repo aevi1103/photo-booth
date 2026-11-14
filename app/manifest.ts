@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
 	return {
-		name: "Nugget Photo Booth",
-		short_name: "Nugget",
+		name: "Little Cloud Photo Booth",
+		short_name: "Little Cloud",
 		description: "A photo booth for a special baby shower.",
 		start_url: "/",
 		display: "standalone",

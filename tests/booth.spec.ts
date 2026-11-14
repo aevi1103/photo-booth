@@ -561,6 +561,38 @@ for (const kind of ["opaque", "transparent"] as const) {
 	});
 }
 
+test("frames over the pixel budget fail before transparency analysis", async ({
+	page,
+}) => {
+	await mockFrame(page, 64, 64, "opaque");
+	await page.addInitScript(() => {
+		const width = Object.getOwnPropertyDescriptor(
+			HTMLImageElement.prototype,
+			"naturalWidth",
+		)?.get;
+		const height = Object.getOwnPropertyDescriptor(
+			HTMLImageElement.prototype,
+			"naturalHeight",
+		)?.get;
+		Object.defineProperty(HTMLImageElement.prototype, "naturalWidth", {
+			configurable: true,
+			get() {
+				return this.src.includes("/frames/") ? 4096 : width?.call(this);
+			},
+		});
+		Object.defineProperty(HTMLImageElement.prototype, "naturalHeight", {
+			configurable: true,
+			get() {
+				return this.src.includes("/frames/") ? 4096 : height?.call(this);
+			},
+		});
+	});
+	await page.goto("/");
+	await expect(
+		page.getByRole("alert").filter({ hasText: "8 megapixels" }),
+	).toBeVisible();
+});
+
 test("frame load failures block capture and refreshing a repaired frame recovers", async ({
 	page,
 }) => {

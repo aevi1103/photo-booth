@@ -103,6 +103,22 @@ test("Vercel-safe photo limit accepts 4 MiB and rejects one byte over without co
   expect([...backend.objects.values()][0].length).toBe(4 * 1024 * 1024);
 });
 
+test("photo upload rate limiting happens before JPEG validation", async ({ request, backend }) => {
+  await backend.db.exec(`
+    insert into public.photo_upload_limits(id, window_start, count)
+    values (true, now(), 60);
+  `);
+  const response = await request.post("/api/photos", {
+    ...upload,
+    data: Buffer.from([0, 1, 2, 3]),
+  });
+  expect(response.status()).toBe(429);
+  expect(backend.objects.size).toBe(0);
+  expect(await (await request.get("/api/account")).json()).toMatchObject({
+    quota: { used: 0 },
+  });
+});
+
 test("admins can save beyond 20 and other users have separate allowances", async ({ backend, playwright }) => {
   const admin = await playwright.request.newContext({ baseURL: "http://127.0.0.1:3210", storageState: { cookies: [sessionCookie(adminId)], origins: [] } });
   const other = await playwright.request.newContext({ baseURL: "http://127.0.0.1:3210", storageState: { cookies: [sessionCookie(otherId)], origins: [] } });

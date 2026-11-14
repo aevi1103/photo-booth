@@ -208,7 +208,7 @@ export function GalleryPhotos({
 									: "ml-0 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3",
 							)}
 						>
-							{photos.map((photo) => (
+							{photos.map((photo, index) => (
 								<CarouselItem
 									key={photo.name}
 									className={booth ? "basis-2/3 pl-3 min-[801px]:pl-0" : "pl-0"}
@@ -276,7 +276,7 @@ export function GalleryPhotos({
 															className="size-full object-contain"
 															src={photo.url}
 															alt={`Baby-shower memory ${photo.name}`}
-															loading="lazy"
+															loading={index === 0 ? "eager" : "lazy"}
 															width={1153}
 															height={768}
 															unoptimized
@@ -438,7 +438,7 @@ export function GalleryPhotos({
 					</DialogHeader>
 					{viewedPhoto && (
 						<>
-							<div className="flex flex-wrap items-center gap-3">
+							<div className="flex flex-wrap items-start gap-3">
 								{viewedPhoto.shareUrl && (
 									<ShareButton
 										imageUrl={`${viewedPhoto.shareUrl}/image`}

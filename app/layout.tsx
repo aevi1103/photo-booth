@@ -14,9 +14,9 @@ const figtreeHeading = Figtree({
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
-	title: "Nugget Photo Booth",
+	title: "Little Cloud Photo Booth",
 	description: "A photo booth for a special baby shower.",
-	appleWebApp: { capable: true, title: "Nugget Photo Booth" },
+	appleWebApp: { capable: true, title: "Little Cloud Photo Booth" },
 	icons: { apple: "/icons/apple-touch-icon.png" },
 };
 

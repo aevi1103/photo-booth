@@ -1,3 +1,5 @@
+import { BACKDROP_DIMENSION_ERROR, MAX_BACKDROP_PIXELS } from "@/lib/backdrops";
+
 export type CheckerboardRegion = {
 	left: number;
 	top: number;
@@ -107,6 +109,8 @@ export async function prepareBackdropFile(
 ): Promise<File> {
 	const image = await createImageBitmap(file);
 	try {
+		if (image.width * image.height > MAX_BACKDROP_PIXELS)
+			throw new Error(BACKDROP_DIMENSION_ERROR);
 		if (file.type !== "image/jpeg") return file;
 		const canvas = document.createElement("canvas");
 		canvas.width = image.width;

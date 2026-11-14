@@ -55,6 +55,13 @@ export async function POST(request: Request) {
   const length = Number(request.headers.get("content-length"));
   if (length > MAX_PHOTO_BYTES) return Response.json({ error: PHOTO_SIZE_ERROR }, { status: 413 });
   if (!request.body) return Response.json({ error: "No photo was provided." }, { status: 400 });
+  const client = createAdminClient();
+  const { data: allowed, error: limitError } = await client.rpc("allow_photo_upload");
+  if (limitError) {
+    console.error("Photo upload rate limit failed:", limitError.message);
+    return Response.json({ error: "Photo saving is temporarily unavailable." }, { status: 503 });
+  }
+  if (!allowed) return Response.json({ error: "Too many uploads. Please wait a minute and retry." }, { status: 429 });
   const reader = request.body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
@@ -72,13 +79,6 @@ export async function POST(request: Request) {
   if (image.length < 4 || image[0] !== 0xff || image[1] !== 0xd8 || image[2] !== 0xff || image[image.length - 2] !== 0xff || image[image.length - 1] !== 0xd9) {
     return Response.json({ error: "The photo is not a valid JPEG." }, { status: 400 });
   }
-  const client = createAdminClient();
-  const { data: allowed, error: limitError } = await client.rpc("allow_photo_upload");
-  if (limitError) {
-    console.error("Photo upload rate limit failed:", limitError.message);
-    return Response.json({ error: "Photo saving is temporarily unavailable." }, { status: 503 });
-  }
-  if (!allowed) return Response.json({ error: "Too many uploads. Please wait a minute and retry." }, { status: 429 });
   const { data: reservation, error: quotaError } = await client.rpc("reserve_photo_upload", { p_user_id: auth.user.id });
   if (quotaError || !isPhotoReservation(reservation)) {
     console.error("Photo quota reservation failed:", quotaError?.message ?? "Invalid quota reservation.");

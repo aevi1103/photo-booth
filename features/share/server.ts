@@ -19,6 +19,23 @@ export function createShareId(name: string) {
 	return `${payload}.${sign(payload).toString("base64url")}`;
 }
 
+export const sharedPhotoExists = cache(async (id: string) => {
+	await connection();
+	const name = readShareId(id);
+	if (!name) return false;
+	const separator = name.lastIndexOf("/");
+	const folder = separator < 0 ? "" : name.slice(0, separator);
+	const file = separator < 0 ? name : name.slice(separator + 1);
+	const { data, error } = await createAdminClient()
+		.storage.from("photos")
+		.list(folder, { limit: 1, search: file });
+	if (error) {
+		console.error("Shared photo lookup failed:", error.message);
+		throw new Error("Could not load this photo. Please try again.");
+	}
+	return data.some((item) => item.name === file && Boolean(item.id));
+});
+
 function readShareId(id: string) {
 	if (id.length > 8192) return null;
 	const [payload, signature, extra] = id.split(".");

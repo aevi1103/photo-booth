@@ -8,7 +8,9 @@ export type ManagedBackdrop = {
 };
 
 export const MAX_BACKDROP_BYTES = 4 * 1024 * 1024;
+export const MAX_BACKDROP_PIXELS = 8 * 1024 * 1024;
 export const BACKDROP_SIZE_ERROR = "Backdrops must be 4 MiB or smaller.";
+export const BACKDROP_DIMENSION_ERROR = "Backdrops must be 8 megapixels or smaller.";
 export const backdropTypes = ["image/jpeg", "image/png", "image/webp"];
 
 export function isBackdropImage(image: Uint8Array, type: string) {

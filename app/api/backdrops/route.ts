@@ -216,6 +216,21 @@ export async function POST(request: Request) {
 			{ error: "No backdrop was provided." },
 			{ status: 400, headers },
 		);
+	const client = createAdminClient();
+	const { data: allowed, error: limitError } =
+		await client.rpc("allow_photo_upload");
+	if (limitError) {
+		console.error("Backdrop rate limit failed:", limitError.message);
+		return Response.json(
+			{ error: "Backdrop saving is temporarily unavailable." },
+			{ status: 503, headers },
+		);
+	}
+	if (!allowed)
+		return Response.json(
+			{ error: "Too many uploads. Please wait a minute and retry." },
+			{ status: 429, headers },
+		);
 	const reader = request.body.getReader();
 	const chunks: Uint8Array[] = [];
 	let total = 0;
@@ -246,21 +261,6 @@ export async function POST(request: Request) {
 			.slice(0, 80) || "backdrop";
 	const extension =
 		type === "image/jpeg" ? "jpg" : type === "image/png" ? "png" : "webp";
-	const client = createAdminClient();
-	const { data: allowed, error: limitError } =
-		await client.rpc("allow_photo_upload");
-	if (limitError) {
-		console.error("Backdrop rate limit failed:", limitError.message);
-		return Response.json(
-			{ error: "Backdrop saving is temporarily unavailable." },
-			{ status: 503, headers },
-		);
-	}
-	if (!allowed)
-		return Response.json(
-			{ error: "Too many uploads. Please wait a minute and retry." },
-			{ status: 429, headers },
-		);
 	const { error } = await client.storage
 		.from("backdrops")
 		.upload(`${crypto.randomUUID()}_${name}.${extension}`, image, {

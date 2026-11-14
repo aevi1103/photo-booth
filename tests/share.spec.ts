@@ -71,6 +71,15 @@ for (const path of ["/", "/gallery"]) {
 		const print = dialog.getByRole("button", { name: "Print", exact: true });
 		await expect(share).toBeVisible();
 		await expect(print).toBeEnabled();
+		await expect
+			.poll(() =>
+				dialog.evaluate((element) =>
+					element
+						.getAnimations()
+						.some((animation) => animation.playState === "running"),
+				),
+			)
+			.toBe(false);
 		const shareBox = await share.boundingBox();
 		const printBox = await print.boundingBox();
 		if (!shareBox || !printBox) throw new Error("Missing preview actions");
@@ -154,6 +163,7 @@ test("authorized galleries issue anonymous expiring share pages with absolute so
 	request,
 	page,
 	playwright,
+	backend,
 }) => {
 	const listing = await (await request.get("/api/photos")).json();
 	expect(listing.photos).toHaveLength(1);
@@ -173,6 +183,10 @@ test("authorized galleries issue anonymous expiring share pages with absolute so
 	await expect(
 		page.getByRole("img", { name: "Nugget Photo Booth memory" }),
 	).toBeVisible();
+	await expect(
+		page.getByRole("img", { name: "Nugget Photo Booth memory" }),
+	).toHaveJSProperty("naturalWidth", 1);
+	expect(backend.photoDownloads).toBe(1);
 	await expect(page.locator('meta[property="og:title"]')).toHaveAttribute(
 		"content",
 		"Nugget Photo Booth memory",
@@ -206,6 +220,7 @@ test("authorized galleries issue anonymous expiring share pages with absolute so
 		expect(image.headers()["content-type"]).toBe("image/png");
 		expect(image.headers()["cache-control"]).toContain("no-store");
 		expect(await image.body()).toEqual(png);
+		expect(backend.photoDownloads).toBe(2);
 		const crawler = await anonymous.get(shareUrl, {
 			headers: { "user-agent": "facebookexternalhit/1.1" },
 		});

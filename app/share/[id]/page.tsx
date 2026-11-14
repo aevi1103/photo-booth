@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 import Image from "next/image";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import { readSharedPhoto } from "@/features/share/server";
+import { sharedPhotoExists } from "@/features/share/server";
 import { appOrigin } from "@/lib/app-origin";
 
 type Props = { params: Promise<{ id: string }> };
@@ -14,7 +14,7 @@ export const instant = false;
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
 	const { id } = await params;
-	if (!(await readSharedPhoto(id))) notFound();
+	if (!(await sharedPhotoExists(id))) notFound();
 	const requestHeaders = await headers();
 	const host = requestHeaders.get("host");
 	if (!host) throw new Error("The sharing origin could not be determined.");
@@ -44,7 +44,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 async function SharedPhoto({ params }: Props) {
 	const { id } = await params;
-	if (!(await readSharedPhoto(id))) notFound();
+	if (!(await sharedPhotoExists(id))) notFound();
 	return (
 		<main className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col items-center justify-center gap-4 p-4">
 			<h1 className="text-center text-2xl font-semibold">{title}</h1>
