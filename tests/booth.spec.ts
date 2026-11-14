@@ -133,7 +133,26 @@ async function compositionMatches(
 			const photo =
 				document.querySelector<HTMLImageElement>(".gallery-photo img");
 			if (captured && (!photo || !photo.complete)) return false;
-			actualContext.drawImage(captured ? photo! : source, 0, 0);
+			if (captured) {
+				// The saved print contains the whole frame, centered.
+				const scale = Math.min(
+					photo!.naturalWidth / source.width,
+					photo!.naturalHeight / source.height,
+				);
+				const width = source.width * scale;
+				const height = source.height * scale;
+				actualContext.drawImage(
+					photo!,
+					(photo!.naturalWidth - width) / 2,
+					(photo!.naturalHeight - height) / 2,
+					width,
+					height,
+					0,
+					0,
+					source.width,
+					source.height,
+				);
+			} else actualContext.drawImage(source, 0, 0);
 			const points = [
 				[10, 10],
 				[22, 22],
@@ -432,7 +451,19 @@ for (const viewport of [
 				width: image.naturalWidth,
 				height: image.naturalHeight,
 			}));
-		expect(dimensions).toEqual({ width: 1920, height: 1080 });
+		// Saved as a 6x4 in print at 300 DPI.
+		expect(dimensions).toEqual({ width: 1800, height: 1200 });
+		const jfif = await page
+			.getByAltText("Baby-shower memory captured.jpg")
+			.evaluate(async (image: HTMLImageElement) =>
+				Array.from(
+					new Uint8Array(await (await fetch(image.src)).arrayBuffer()).slice(
+						13,
+						18,
+					),
+				),
+			);
+		expect(jfif).toEqual([1, 1, 44, 1, 44]);
 	});
 }
 
@@ -441,7 +472,7 @@ for (const [width, height] of [
 	[480, 320],
 	[400, 400],
 ]) {
-	test(`frame geometry ${width}x${height} preserves native output and crops to the transparent opening`, async ({
+	test(`frame geometry ${width}x${height} saves a whole-frame 6x4 print and crops to the transparent opening`, async ({
 		page,
 	}) => {
 		const opening = await mockFrame(page, width, height);
@@ -497,7 +528,7 @@ for (const [width, height] of [
 				image.naturalWidth,
 				image.naturalHeight,
 			]),
-		).toEqual([width, height]);
+		).toEqual(height > width ? [1200, 1800] : [1800, 1200]);
 		expect(await compositionMatches(page, opening, true, true)).toBe(true);
 	});
 }
@@ -662,7 +693,7 @@ test("booth persists preferences locally but not the active camera session", asy
 	).toBeDisabled();
 });
 
-test("mirror control updates the preview and preserves the choice on reload", async ({
+test("mirror is on by default, even over an old saved choice, and turning it off lasts only for the page", async ({
 	page,
 }) => {
 	await mockFrame(page, 320, 480, "transparent");
@@ -710,19 +741,19 @@ test("mirror control updates the preview and preserves the choice on reload", as
 			})
 			.toBe(true);
 	};
-	await expectMirror(false);
 	const mirror = page.getByRole("button", { name: "Mirror", exact: true });
-	await expect(mirror).toHaveAttribute("aria-pressed", "false");
-	await mirror.click();
 	await expect(mirror).toHaveAttribute("aria-pressed", "true");
 	await expectMirror(true);
+	await mirror.click();
+	await expect(mirror).toHaveAttribute("aria-pressed", "false");
+	await expectMirror(false);
 	await page.reload();
 	await expect(mirror).toHaveAttribute("aria-pressed", "true");
 	await page.getByRole("button", { name: "Connect", exact: true }).click();
 	await expectMirror(true);
-	await mirror.click();
-	await expect(mirror).toHaveAttribute("aria-pressed", "false");
-	await expectMirror(false);
+	expect(
+		await page.evaluate(() => localStorage.getItem("photo-booth-preferences")),
+	).not.toContain("mirror");
 });
 
 test("the shared default overrides personal choices and ignores a late bundled frame load", async ({
@@ -1504,12 +1535,27 @@ async function boxColors(page: Page, source: "preview" | "photo" = "preview") {
 	return element.evaluate((element, boxes) => {
 		const media = element as HTMLCanvasElement | HTMLImageElement;
 		const canvas = document.createElement("canvas");
-		canvas.width =
-			media instanceof HTMLImageElement ? media.naturalWidth : media.width;
-		canvas.height =
-			media instanceof HTMLImageElement ? media.naturalHeight : media.height;
 		const context = canvas.getContext("2d")!;
-		context.drawImage(media, 0, 0);
+		if (media instanceof HTMLImageElement) {
+			// The 6x4 print pads the 16:9 frame above and below.
+			canvas.width = media.naturalWidth;
+			canvas.height = (media.naturalWidth * 1080) / 1920;
+			context.drawImage(
+				media,
+				0,
+				(media.naturalHeight - canvas.height) / 2,
+				canvas.width,
+				canvas.height,
+				0,
+				0,
+				canvas.width,
+				canvas.height,
+			);
+		} else {
+			canvas.width = media.width;
+			canvas.height = media.height;
+			context.drawImage(media, 0, 0);
+		}
 		const name = (x: number) => {
 			const [r, g, b] = context.getImageData(
 				Math.round(canvas.width * x),

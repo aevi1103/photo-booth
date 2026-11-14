@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { useStore } from "zustand";
 import type { BoothStore, Settings } from "@/components/booth/store/store";
 import type { createCompositor } from "@/lib/compositor";
+import { renderPrint, withPrintDpi } from "@/lib/print-layout";
 import { canCaptureFromCache } from "@/lib/queries/account";
 import { useUploadPhoto } from "@/lib/queries/photos";
 import type { useBoothSounds } from "@/lib/use-booth-sounds";
@@ -94,16 +95,13 @@ export function useBoothCapture({
 		const video = videoRef.current;
 		const compositor = compositorRef.current;
 		if (!source?.width || !video || !compositor) return fail(CAMERA_NOT_READY);
-		const output = document.createElement("canvas");
-		output.width = source.width;
-		output.height = source.height;
-		const context = output.getContext("2d");
-		if (!context) return fail("Could not create the photo.");
 		compositor.draw(video, settingsRef.current);
-		context.drawImage(source, 0, 0);
+		const output = renderPrint(source);
+		if (!output) return fail("Could not create the photo.");
 		output.toBlob(
-			(blob) => {
-				if (!blob) return fail("Could not export the photo.");
+			async (encoded) => {
+				if (!encoded) return fail("Could not export the photo.");
+				const blob = await withPrintDpi(encoded);
 				store.setState({
 					shotIndex: null,
 					photo: { blob, url: URL.createObjectURL(blob) },

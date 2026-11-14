@@ -47,8 +47,8 @@ export type BoothState = {
 
 type PersistedBoothState = Pick<
 	BoothState,
-	"settings" | "deviceId" | "background" | "backgroundChosen"
->;
+	"deviceId" | "background" | "backgroundChosen"
+> & { settings: Omit<Settings, "mirror"> };
 
 export type BoothStore = ReturnType<typeof createBoothStore>;
 
@@ -78,12 +78,16 @@ export function createBoothStore(backgrounds: Backdrop[]) {
 			{
 				name: "photo-booth-preferences",
 				storage: createJSONStorage(() => localStorage),
-				partialize: (state) => ({
-					settings: state.settings,
-					deviceId: state.deviceId,
-					background: state.background,
-					backgroundChosen: state.backgroundChosen,
-				}),
+				partialize: (state) => {
+					// Mirroring always starts on; turning it off lasts only for this page.
+					const { mirror: _mirror, ...settings } = state.settings;
+					return {
+						settings,
+						deviceId: state.deviceId,
+						background: state.background,
+						backgroundChosen: state.backgroundChosen,
+					};
+				},
 				merge: (persistedState, currentState) => {
 					const persisted = persistedState as
 						| Partial<PersistedBoothState>
@@ -94,6 +98,7 @@ export function createBoothStore(backgrounds: Backdrop[]) {
 						settings: {
 							...currentState.settings,
 							...persisted?.settings,
+							mirror: currentState.settings.mirror,
 						},
 					};
 				},
