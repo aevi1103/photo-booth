@@ -31,23 +31,42 @@ test("automatic capture waits for a face and cancels only the first countdown", 
 	await expect(page.getByText("Waiting for a face.")).toBeVisible({
 		timeout: 20_000,
 	});
-	await page.waitForTimeout(5_500);
+	await page.waitForTimeout(3_500);
 	await expect(page.getByText("Photo 1 of 3")).toHaveCount(0);
 
 	await page.evaluate(() => Object.assign(window, { showTestFace: true }));
-	await expect(
-		page.getByText("Face detected. Hold still for 5 seconds."),
-	).toBeVisible({
+	const toast = page.locator('[data-slot="toast"]').filter({
+		hasText: "Face detected. Hold still for 3 seconds.",
+	});
+	const expectCentered = async () => {
+		await expect
+			.poll(async () => {
+				const bounds = await toast.boundingBox();
+				const viewport = page.viewportSize();
+				if (!bounds || !viewport) return Infinity;
+				return Math.max(
+					Math.abs(bounds.x + bounds.width / 2 - viewport.width / 2),
+					Math.abs(bounds.y + bounds.height / 2 - viewport.height / 2),
+				);
+			})
+			.toBeLessThan(3);
+	};
+	await expect(toast).toBeVisible({
 		timeout: 15_000,
 	});
+	await expectCentered();
 	await expect(page.getByText("Photo 1 of 3")).toBeVisible({
 		timeout: 15_000,
 	});
+	await expect(toast).toBeHidden();
 	await page.evaluate(() => Object.assign(window, { showTestFace: false }));
 	await expect(page.getByText("Photo 1 of 3")).toHaveCount(0);
 	await expect(page.getByText("Waiting for a face.")).toBeVisible();
 
+	await page.getByRole("button", { name: "Photo mode" }).click();
 	await page.evaluate(() => Object.assign(window, { showTestFace: true }));
+	await expect(toast).toBeVisible();
+	await expectCentered();
 	await expect(page.getByText("Photo 1 of 3")).toBeVisible({
 		timeout: 15_000,
 	});
@@ -81,7 +100,7 @@ test("automatic capture is on by default and its toggle is remembered", async ({
 	await expect(toggle).toHaveAttribute("aria-pressed", "false");
 	await page.reload();
 	await expect(toggle).toHaveAttribute("aria-pressed", "false");
-	await expect(page.getByText("Automatic capture is off.")).toBeVisible();
+	await expect(page.locator('[data-slot="toast"]')).toHaveCount(0);
 });
 
 test("automatic capture remains available in photo mode", async ({ page }) => {
@@ -100,6 +119,31 @@ test("automatic capture remains available in photo mode", async ({ page }) => {
 	).toHaveText("Auto capture: Off");
 });
 
+test("the waiting toast is centered in mobile photo mode and closes when disabled", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.goto("/");
+	await page.getByRole("button", { name: "Connect", exact: true }).click();
+	await page.getByRole("button", { name: "Photo mode" }).click();
+	const toast = page.locator('[data-slot="toast"]').filter({
+		hasText: "Waiting for a face.",
+	});
+	await expect(toast).toBeVisible({ timeout: 20_000 });
+	await expect
+		.poll(async () => {
+			const bounds = await toast.boundingBox();
+			if (!bounds) return Infinity;
+			return Math.max(
+				Math.abs(bounds.x + bounds.width / 2 - 195),
+				Math.abs(bounds.y + bounds.height / 2 - 422),
+			);
+		})
+		.toBeLessThan(3);
+	await page.getByRole("button", { name: "Automatic capture" }).click();
+	await expect(toast).toBeHidden();
+});
+
 test("manual capture still works if the face model cannot load", async ({
 	page,
 }) => {
@@ -109,9 +153,9 @@ test("manual capture still works if the face model cannot load", async ({
 	await page.goto("/");
 	await page.getByRole("button", { name: "Connect", exact: true }).click();
 	await expect(
-		page
-			.getByRole("alert")
-			.filter({ hasText: "Automatic capture is unavailable" }),
+		page.locator('[data-slot="toast"]').filter({
+			hasText: "Automatic capture is unavailable",
+		}),
 	).toBeVisible({ timeout: 20_000 });
 	await page.getByRole("button", { name: "Take a photo" }).click();
 	await expect(page.getByText("Photo 1 of 3")).toBeVisible();

@@ -3,7 +3,8 @@ import type { BoundingBox } from "@mediapipe/tasks-vision";
 type FaceBox = Pick<BoundingBox, "originX" | "originY" | "width" | "height">;
 type Track = { anchor: FaceBox; last: FaceBox; startedAt: number };
 
-const STILLNESS_MS = 5_000;
+export const STILLNESS_SECONDS = 3;
+const STILLNESS_MS = STILLNESS_SECONDS * 1_000;
 const MAX_SAMPLE_GAP_MS = 750;
 const MIN_OVERLAP = 0.4;
 const MAX_POSITION_CHANGE = 0.08;

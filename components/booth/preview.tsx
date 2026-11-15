@@ -24,11 +24,13 @@ import {
 } from "react";
 import Webcam from "react-webcam";
 import { useStore } from "zustand";
+import { AutoCaptureToast } from "@/components/booth/auto-capture-toast";
 import { CameraControls } from "@/components/booth/camera-controls";
 import type { BoothCamera } from "@/components/booth/hooks/use-booth-camera";
 import type { UploadView } from "@/components/booth/hooks/use-booth-capture";
 import type { BoothStore } from "@/components/booth/store/store";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { STILLNESS_SECONDS } from "@/lib/face-stillness";
 import type { useBoothSounds } from "@/lib/use-booth-sounds";
 import type { useVoiceTrigger } from "@/lib/use-voice-trigger";
 import { Badge } from "../ui/badge";
@@ -474,17 +476,20 @@ export function BoothPreview({
 					{voice.status === "off" ? <Mic /> : <MicOff />}
 				</Button>
 			</div>
-			<p
-				id="auto-capture-status"
-				className={
-					isPhotoMode
-						? "absolute right-3 bottom-24 left-3 z-[2] rounded-xl bg-background/90 p-2 text-center text-xs text-foreground"
-						: "mt-2 text-center text-xs text-muted-foreground"
+			<span id="auto-capture-status" className="sr-only">
+				Automatic capture starts when a face holds still for {STILLNESS_SECONDS}{" "}
+				seconds.
+			</span>
+			<AutoCaptureToast
+				message={
+					autoCapture.error ||
+					(!capturing &&
+						(autoCapture.status === "Waiting for a face." ||
+							autoCapture.status.startsWith("Face detected. Hold still")))
+						? autoCapture.status
+						: null
 				}
-				role={autoCapture.error ? "alert" : "status"}
-			>
-				{autoCapture.status}
-			</p>
+			/>
 			<p
 				className={
 					voice.status === "off"

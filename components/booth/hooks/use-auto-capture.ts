@@ -5,7 +5,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { type RefObject, useEffect, useRef, useState } from "react";
 import { useStore } from "zustand";
 import type { BoothStore } from "@/components/booth/store/store";
-import { createFaceStillnessTracker } from "@/lib/face-stillness";
+import {
+	createFaceStillnessTracker,
+	STILLNESS_SECONDS,
+} from "@/lib/face-stillness";
 import { canCaptureFromCache } from "@/lib/queries/account";
 
 const SAMPLE_MS = 200;
@@ -124,7 +127,9 @@ export function useAutoCapture({
 					startRef.current();
 					setStatus("Face detected.");
 				} else {
-					setStatus("Face detected. Hold still for 5 seconds.");
+					setStatus(
+						`Face detected. Hold still for ${STILLNESS_SECONDS} seconds.`,
+					);
 				}
 				timer = setTimeout(sample, SAMPLE_MS);
 			} catch (error) {
