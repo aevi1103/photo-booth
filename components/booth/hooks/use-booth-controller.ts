@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useAutoCapture } from "@/components/booth/hooks/use-auto-capture";
 import { useBoothCamera } from "@/components/booth/hooks/use-booth-camera";
 import { useBoothCapture } from "@/components/booth/hooks/use-booth-capture";
 import { useBoothPreview } from "@/components/booth/hooks/use-booth-preview";
@@ -17,11 +18,15 @@ const useHydrationEffect =
 
 export function useBoothController(backgrounds: Backdrop[]) {
 	const [store] = useState(() => createBoothStore(backgrounds));
+	const [hydrated, setHydrated] = useState(false);
 	useHydrationEffect(() => {
-		void store.persist.rehydrate();
+		void Promise.resolve(store.persist.rehydrate()).then(() =>
+			setHydrated(true),
+		);
 	}, [store]);
 	const sounds = useBoothSounds();
 	const streamRef = useRef<MediaStream | null>(null);
+	const autoFaceCheckRef = useRef<(() => boolean) | null>(null);
 	const quota = useQuota();
 	const { videoRef, canvasRef, compositorRef, settingsRef } =
 		useBoothPreview(store);
@@ -32,6 +37,7 @@ export function useBoothController(backgrounds: Backdrop[]) {
 		compositorRef,
 		settingsRef,
 		streamRef,
+		autoFaceCheckRef,
 		sounds,
 	});
 	const camera = useBoothCamera({
@@ -44,11 +50,24 @@ export function useBoothController(backgrounds: Backdrop[]) {
 		onInterrupted: capture.handleCameraInterruption,
 	});
 	const voice = useVoiceTrigger(capture.startCountdown);
+	const autoCapture = useAutoCapture({
+		store,
+		videoRef,
+		streamRef,
+		autoFaceCheckRef,
+		ready:
+			hydrated &&
+			!capture.savedPreviewOpen &&
+			quotaAllowsCapture(quota.status, quota.data),
+		start: capture.startAutomatic,
+		cancel: capture.cancelAutomatic,
+	});
 
 	return {
 		store,
 		sounds,
 		voice,
+		autoCapture,
 		camera,
 		canvasRef,
 		quota,

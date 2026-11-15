@@ -10,6 +10,7 @@ import {
 	Mic,
 	MicOff,
 	RotateCcw,
+	ScanFace,
 	Trash2,
 	X,
 } from "lucide-react";
@@ -40,6 +41,7 @@ type Props = {
 	canvasRef: React.RefObject<HTMLCanvasElement | null>;
 	sounds: ReturnType<typeof useBoothSounds>;
 	voice: ReturnType<typeof useVoiceTrigger>;
+	autoCapture: { status: string; error: boolean };
 	onCapture: () => void;
 	onDiscard: () => void;
 	onSave: () => void;
@@ -60,6 +62,7 @@ export function BoothPreview({
 	canvasRef,
 	sounds,
 	voice,
+	autoCapture,
 	onCapture,
 	onDiscard,
 	onSave,
@@ -84,6 +87,7 @@ export function BoothPreview({
 		frameError,
 		settings,
 		keyDetected,
+		autoCapture: autoCaptureEnabled,
 	} = useStore(store);
 	const capturing = countdown !== null || shotIndex !== null;
 	const shotTotal = Math.max(1, frameOpenings.length);
@@ -128,6 +132,24 @@ export function BoothPreview({
 	const frameStyle: CSSProperties & { "--frame-aspect": number } = {
 		"--frame-aspect": frameSize ? frameSize.width / frameSize.height : 16 / 9,
 	};
+	const autoCaptureToggle = (
+		<Button
+			variant={autoCaptureEnabled ? "secondary" : "outline"}
+			size={isPhotoMode ? "icon-lg" : "default"}
+			type="button"
+			className={isPhotoMode ? "size-14 cursor-pointer !p-0" : undefined}
+			aria-pressed={autoCaptureEnabled}
+			aria-label="Automatic capture"
+			aria-describedby="auto-capture-status"
+			title="Automatic capture"
+			onClick={() =>
+				store.setState((state) => ({ autoCapture: !state.autoCapture }))
+			}
+		>
+			<ScanFace data-icon="inline-start" />
+			{!isPhotoMode && `Auto capture: ${autoCaptureEnabled ? "On" : "Off"}`}
+		</Button>
+	);
 
 	return (
 		<section
@@ -199,6 +221,7 @@ export function BoothPreview({
 								>
 									<FlipHorizontal2 data-icon="inline-start" /> Mirror
 								</Button>
+								{!isPhotoMode && autoCaptureToggle}
 								<Button
 									variant="outline"
 									disabled={!connected || photo !== null}
@@ -423,6 +446,7 @@ export function BoothPreview({
 						Saving…
 					</Button>
 				)}
+				{isPhotoMode && autoCaptureToggle}
 				<Button
 					variant={voice.status === "off" ? "outline" : "secondary"}
 					size="icon-lg"
@@ -450,6 +474,17 @@ export function BoothPreview({
 					{voice.status === "off" ? <Mic /> : <MicOff />}
 				</Button>
 			</div>
+			<p
+				id="auto-capture-status"
+				className={
+					isPhotoMode
+						? "absolute right-3 bottom-24 left-3 z-[2] rounded-xl bg-background/90 p-2 text-center text-xs text-foreground"
+						: "mt-2 text-center text-xs text-muted-foreground"
+				}
+				role={autoCapture.error ? "alert" : "status"}
+			>
+				{autoCapture.status}
+			</p>
 			<p
 				className={
 					voice.status === "off"

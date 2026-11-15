@@ -11,7 +11,7 @@ import { canCaptureFromCache } from "@/lib/queries/account";
 import { useUploadPhoto } from "@/lib/queries/photos";
 import type { useBoothSounds } from "@/lib/use-booth-sounds";
 
-type CaptureSounds = Pick<ReturnType<typeof useBoothSounds>, "play">;
+type CaptureSounds = Pick<ReturnType<typeof useBoothSounds>, "play" | "cancel">;
 type Compositor = ReturnType<typeof createCompositor>;
 export type UploadView = {
 	status: "idle" | "saving" | "saved" | "failed";
@@ -31,6 +31,7 @@ export function useBoothCapture({
 	compositorRef,
 	settingsRef,
 	streamRef,
+	autoFaceCheckRef,
 	sounds,
 }: {
 	store: BoothStore;
@@ -39,6 +40,7 @@ export function useBoothCapture({
 	compositorRef: RefObject<Compositor | null>;
 	settingsRef: RefObject<Settings>;
 	streamRef: RefObject<MediaStream | null>;
+	autoFaceCheckRef: RefObject<(() => boolean) | null>;
 	sounds: CaptureSounds;
 }) {
 	const queryClient = useQueryClient();
@@ -46,6 +48,7 @@ export function useBoothCapture({
 	const resetUpload = uploadMutation.reset;
 	const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const captureBusyRef = useRef(false);
+	const cancelSound = sounds.cancel;
 	const { photo, savedPreviewOpen } = useStore(store);
 
 	useEffect(() => {
@@ -80,8 +83,15 @@ export function useBoothCapture({
 		if (timerRef.current) clearTimeout(timerRef.current);
 		timerRef.current = null;
 		compositorRef.current?.resetSlots();
-		store.setState({ countdown: null, shotIndex: null });
+		store.setState({ countdown: null, shotIndex: null, autoCountdown: false });
 	}, [compositorRef, store]);
+
+	const cancelAutomatic = useCallback(() => {
+		if (!store.getState().autoCountdown) return;
+		cancelSound();
+		cancelSequence();
+		captureBusyRef.current = false;
+	}, [cancelSequence, cancelSound, store]);
 
 	function fail(message: string) {
 		cancelSequence();
@@ -158,6 +168,15 @@ export function useBoothCapture({
 		const tick = () => {
 			value -= 1;
 			if (value === 0) {
+				if (
+					index === 0 &&
+					store.getState().autoCountdown &&
+					!autoFaceCheckRef.current?.()
+				) {
+					cancelAutomatic();
+					return;
+				}
+				store.setState({ autoCountdown: false });
 				store.setState({ countdown: null });
 				shoot(index);
 				return;
@@ -169,7 +188,7 @@ export function useBoothCapture({
 		timerRef.current = setTimeout(tick, 1000);
 	}
 
-	function startCountdown() {
+	function startSequence(automatic: boolean) {
 		const state = store.getState();
 		if (
 			!state.connected ||
@@ -185,8 +204,17 @@ export function useBoothCapture({
 		captureBusyRef.current = true;
 		resetUpload();
 		compositorRef.current?.resetSlots();
-		store.setState({ message: "" });
+		store.setState({ message: "", autoCountdown: automatic });
 		countdown(0);
+	}
+
+	function startCountdown() {
+		startSequence(false);
+	}
+
+	function startAutomatic() {
+		if (!store.getState().autoCapture || document.hidden) return;
+		startSequence(true);
 	}
 
 	const handleCameraInterruption = useCallback(() => {
@@ -232,6 +260,8 @@ export function useBoothCapture({
 		upload,
 		uploadView,
 		startCountdown,
+		startAutomatic,
+		cancelAutomatic,
 		handleCameraInterruption,
 		save,
 		retake,

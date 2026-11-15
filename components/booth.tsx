@@ -43,6 +43,7 @@ export function Booth({ backgrounds: defaults }: { backgrounds: Backdrop[] }) {
 		store,
 		sounds,
 		voice,
+		autoCapture,
 		camera,
 		canvasRef,
 		quota,
@@ -212,6 +213,7 @@ export function Booth({ backgrounds: defaults }: { backgrounds: Backdrop[] }) {
 						canvasRef={canvasRef}
 						sounds={sounds}
 						voice={voice}
+						autoCapture={autoCapture}
 						onCapture={startCountdown}
 						onDiscard={discard}
 						onSave={save}

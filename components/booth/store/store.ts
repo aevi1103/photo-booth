@@ -24,6 +24,8 @@ export const initialSettings: Settings = {
 
 export type BoothState = {
 	settings: Settings;
+	autoCapture: boolean;
+	autoCountdown: boolean;
 	galleryVisible: boolean;
 	savedPreviewOpen: boolean;
 	devices: MediaDeviceInfo[];
@@ -48,7 +50,7 @@ export type BoothState = {
 
 type PersistedBoothState = Pick<
 	BoothState,
-	"deviceId" | "background" | "backgroundChosen"
+	"deviceId" | "background" | "backgroundChosen" | "autoCapture"
 > & { settings: Omit<Settings, "mirror"> };
 
 export type BoothStore = ReturnType<typeof createBoothStore>;
@@ -58,6 +60,8 @@ export function createBoothStore(backgrounds: Backdrop[]) {
 		persist<BoothState, [], [], PersistedBoothState>(
 			() => ({
 				settings: initialSettings,
+				autoCapture: true,
+				autoCountdown: false,
 				galleryVisible: true,
 				savedPreviewOpen: false,
 				devices: [],
@@ -88,6 +92,7 @@ export function createBoothStore(backgrounds: Backdrop[]) {
 						deviceId: state.deviceId,
 						background: state.background,
 						backgroundChosen: state.backgroundChosen,
+						autoCapture: state.autoCapture,
 					};
 				},
 				merge: (persistedState, currentState) => {
@@ -97,6 +102,10 @@ export function createBoothStore(backgrounds: Backdrop[]) {
 					return {
 						...currentState,
 						...persisted,
+						autoCapture:
+							typeof persisted?.autoCapture === "boolean"
+								? persisted.autoCapture
+								: currentState.autoCapture,
 						settings: {
 							...currentState.settings,
 							...persisted?.settings,

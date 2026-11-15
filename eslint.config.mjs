@@ -11,6 +11,7 @@ const eslintConfig = defineConfig([
     ".next/**",
     ".next-test-configured/**",
     ".next-test-unconfigured/**",
+    "public/mediapipe/wasm/**",
     "out/**",
     "build/**",
     "next-env.d.ts",
