@@ -177,6 +177,42 @@ grant execute on function public.reserve_photo_upload(uuid) to service_role;
 grant execute on function public.release_photo_upload(uuid) to service_role;
 grant execute on function public.list_booth_photos(uuid, integer) to service_role;
 
+create table if not exists public.photo_download_counts (
+  photo_name text primary key,
+  download_count bigint not null default 0 check (download_count >= 0)
+);
+alter table public.photo_download_counts enable row level security;
+revoke all on public.photo_download_counts from public, anon, authenticated;
+grant select, insert, update on public.photo_download_counts to service_role;
+
+create or replace function public.record_photo_download(p_name text)
+returns boolean language plpgsql security invoker set search_path = ''
+as $$
+begin
+  insert into public.photo_download_counts as counts (photo_name, download_count)
+  select p_name, 1
+  where exists (select 1 from storage.objects o where o.bucket_id = 'photos' and o.name = p_name)
+  on conflict (photo_name) do update set download_count = counts.download_count + 1;
+  return found;
+end;
+$$;
+
+create or replace function public.get_photo_download_counts(p_user_id uuid, p_names text[])
+returns table(name text, download_count bigint)
+language sql stable security invoker set search_path = ''
+as $$
+  select o.name, coalesce(c.download_count, 0)
+  from storage.objects o
+  left join public.photo_download_counts c on c.photo_name = o.name
+  where o.bucket_id = 'photos' and o.name = any(p_names[1:24])
+    and exists (select 1 from public.profiles p where p.id = p_user_id and p.role = 'admin');
+$$;
+
+revoke all on function public.record_photo_download(text) from public, anon, authenticated;
+revoke all on function public.get_photo_download_counts(uuid, text[]) from public, anon, authenticated;
+grant execute on function public.record_photo_download(text) to service_role;
+grant execute on function public.get_photo_download_counts(uuid, text[]) to service_role;
+
 -- Prevent bypassing the server's quota even if older permissive policies exist.
 -- Other buckets are unaffected; service_role bypasses RLS.
 drop policy if exists "Booth photos are server managed" on storage.objects;

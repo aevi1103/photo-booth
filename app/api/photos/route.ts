@@ -31,12 +31,25 @@ export async function GET(request: Request) {
     console.error("Photo URL signing failed:", signingError?.message ?? "Missing signed photo URL.");
     return Response.json({ error: "Could not open photos. Please retry." }, { status: 503, headers });
   }
+  const { data: counts, error: countError } = await client.rpc("get_photo_download_counts", {
+    p_user_id: auth.user.id,
+    p_names: images.map((file) => file.name),
+  });
+  if (countError || !Array.isArray(counts) || !counts.every((row: unknown) =>
+    row && typeof row === "object" && "name" in row && typeof row.name === "string" &&
+    "download_count" in row && Number.isSafeInteger(row.download_count) && Number(row.download_count) >= 0
+  )) {
+    console.error("Photo download counts failed:", countError?.message ?? "Invalid download counts.");
+    return Response.json({ error: "Could not load photos. Please retry." }, { status: 503, headers });
+  }
+  const downloadCounts = new Map<string, number>(counts.map((row: { name: string; download_count: number }) => [row.name, row.download_count]));
   return Response.json({
     photos: images.map((file, index) => ({
       name: file.name,
       createdAt: file.created_at,
       url: signed[index].signedUrl,
       shareUrl: new URL(`/share/${createShareId(file.name)}`, appOrigin(request)).href,
+      ...(downloadCounts.has(file.name) ? { downloadCount: downloadCounts.get(file.name) } : {}),
     })),
     nextOffset: files.length > 24 ? offset + 24 : null,
   }, { headers });
@@ -101,7 +114,17 @@ export async function POST(request: Request) {
   }
   const { error: recordError } = await client.from("photo_uploads").update({ status: "uploaded" }).eq("id", reservation.id);
   if (recordError) console.error("Photo was saved but its reservation status could not be updated:", recordError.message);
-  return Response.json({ saved: true, quota: reservation.quota }, { headers: { "Cache-Control": "no-store" } });
+  const shareUrl = new URL(`/share/${createShareId(reservation.path)}`, appOrigin(request)).href;
+  return Response.json({
+    saved: true,
+    quota: reservation.quota,
+    photo: {
+      name: reservation.path,
+      createdAt: new Date().toISOString(),
+      url: `${shareUrl}/image`,
+      shareUrl,
+    },
+  }, { headers: { "Cache-Control": "private, no-store" } });
 }
 
 export async function DELETE(request: Request) {

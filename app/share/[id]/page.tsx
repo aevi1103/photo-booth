@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import Image from "next/image";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
+import { DownloadButton } from "@/features/share/DownloadButton";
 import { sharedPhotoExists } from "@/features/share/server";
 import { appOrigin } from "@/lib/app-origin";
 
@@ -57,6 +58,7 @@ async function SharedPhoto({ params }: Props) {
 				referrerPolicy="no-referrer"
 				className="max-h-[80dvh] w-full rounded-xl object-contain"
 			/>
+			<DownloadButton imageUrl={`/share/${id}/image`} />
 			<p className="text-center text-sm text-muted-foreground">
 				This shared link is available for seven days from when it was created.
 			</p>

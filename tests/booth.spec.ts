@@ -2,6 +2,29 @@ import { readFile } from "node:fs/promises";
 import type { Page } from "@playwright/test";
 import { adminId, expect, sessionCookie, test } from "./fixtures";
 
+function savedResponse(
+	bytes?: Buffer | null,
+	name = "captured.jpg",
+	url?: string,
+) {
+	return {
+		saved: true,
+		photo: {
+			name,
+			createdAt: new Date().toISOString(),
+			url: url ?? `data:image/jpeg;base64,${bytes?.toString("base64") ?? ""}`,
+			shareUrl: "http://127.0.0.1:3210/share/test-photo",
+		},
+	};
+}
+
+async function closeSavedPreview(page: Page) {
+	const dialog = page.getByRole("dialog", { name: "Photo memory" });
+	await expect(dialog).toBeVisible();
+	await dialog.getByRole("button", { name: "Close", exact: true }).click();
+	await expect(dialog).toBeHidden();
+}
+
 async function mockSavedCapture(page: Page) {
 	let uploaded: Buffer | null = null;
 	await page.route("**/api/photos?offset=*", (route) =>
@@ -22,7 +45,7 @@ async function mockSavedCapture(page: Page) {
 	);
 	await page.route("**/api/photos", (route) => {
 		uploaded = route.request().postDataBuffer();
-		return route.fulfill({ json: { saved: true } });
+		return route.fulfill({ json: savedResponse(uploaded) });
 	});
 	return () => uploaded;
 }
@@ -1244,7 +1267,9 @@ test("desktop gallery has one scrolling column and repeated captures refresh new
 	);
 	await page.route("**/api/photos", (route) => {
 		captures++;
-		return route.fulfill({ json: { saved: true } });
+		return route.fulfill({
+			json: savedResponse(null, `capture-${captures}.jpg`, image),
+		});
 	});
 	await page.goto("/");
 	const gallery = page.getByRole("region", {
@@ -1308,6 +1333,7 @@ test("desktop gallery has one scrolling column and repeated captures refresh new
 		}
 		await page.getByRole("button", { name: "Take a photo" }).click();
 		await savePhoto(page);
+		await closeSavedPreview(page);
 		if (number === 2) {
 			await expect(
 				page.getByText("Saved privately for the host.", { exact: true }),
@@ -1380,6 +1406,7 @@ for (const viewport of [
 		await expect(page.getByText("Saved privately for the host.")).toBeVisible({
 			timeout: 10_000,
 		});
+		await closeSavedPreview(page);
 		const actions = await page.locator(".actions").boundingBox();
 		expect(actions!.y + actions!.height).toBeLessThanOrEqual(viewport.height);
 		await expect(
@@ -1468,6 +1495,7 @@ for (const viewport of [
 		await expect(page.getByText("Saved privately for the host.")).toBeVisible({
 			timeout: 10_000,
 		});
+		await closeSavedPreview(page);
 		await expect(page.locator(".booth-gallery")).toBeHidden();
 		await expect(page.locator(".booth-preview")).toHaveClass(/is-photo-mode/);
 		await expect(
@@ -1618,7 +1646,9 @@ test("camera interruption mid-sequence resets every box and reconnect restores c
 	let uploads = 0;
 	await page.route("**/api/photos", (route) => {
 		uploads++;
-		return route.fulfill({ json: { saved: true } });
+		return route.fulfill({
+			json: savedResponse(route.request().postDataBuffer()),
+		});
 	});
 	await page.goto("/");
 	await page.getByRole("button", { name: "Connect", exact: true }).click();
@@ -1663,6 +1693,80 @@ test("camera interruption mid-sequence resets every box and reconnect restores c
 	await expect
 		.poll(() => boxColors(page))
 		.toEqual(["red|green", "empty|empty", "empty|empty"]);
+});
+
+test("saved preview opens without gallery refresh, pauses capture, and resets its one-minute timer", async ({
+	page,
+}) => {
+	test.slow();
+	await mockFrame(page, 600, 400, "transparent");
+	const uploaded = await mockSavedCapture(page);
+	await page.route("**/api/photos?offset=*", (route) =>
+		route.fulfill({
+			status: 503,
+			json: { error: "Gallery temporarily unavailable" },
+		}),
+	);
+	await page.goto("/");
+	await page.getByRole("button", { name: "Hide gallery" }).click();
+	await page.getByRole("button", { name: "Connect", exact: true }).click();
+	await page.getByRole("button", { name: "Photo mode" }).click();
+	await page.getByRole("button", { name: "Take a photo" }).click();
+	await expect(page.getByRole("dialog", { name: "Photo memory" })).toHaveCount(
+		0,
+	);
+	const save = page.getByRole("button", { name: "Save photo" });
+	await expect(save).toBeVisible({ timeout: 15_000 });
+	await page.clock.install();
+	await page.clock.pauseAt(new Date());
+	await save.click();
+	const dialog = page.getByRole("dialog", { name: "Photo memory" });
+	await expect(dialog).toBeVisible();
+	await expect(
+		dialog.getByRole("img", { name: "Full-size baby-shower memory" }),
+	).toHaveAttribute(
+		"src",
+		`data:image/jpeg;base64,${uploaded()?.toString("base64")}`,
+	);
+	await expect(
+		dialog.getByRole("region", { name: "Scan to download" }),
+	).toBeVisible();
+	const capture = page.getByRole("button", {
+		name: "Take a photo",
+		includeHidden: true,
+	});
+	await expect(capture).toBeDisabled();
+	await dialog.getByRole("heading", { name: "Photo memory" }).click();
+	await page.keyboard.press("Enter");
+	await expect(page.locator(".countdown")).toHaveCount(0);
+	await page.clock.fastForward(20_000);
+	await dialog.getByRole("button", { name: "Close", exact: true }).click();
+	await page.clock.runFor(200);
+	await expect(dialog).toBeHidden();
+	await expect(
+		page.getByRole("button", { name: "Take a photo" }),
+	).toBeEnabled();
+	await page.getByRole("button", { name: "Take a photo" }).click();
+	await page.clock.runFor(5_100);
+	await expect(save).toBeVisible();
+	await save.click();
+	await expect(dialog).toBeVisible();
+	// The first preview's old deadline must not dismiss this new one.
+	await page.clock.fastForward(59_000);
+	await expect(dialog).toBeVisible();
+	await expect(capture).toBeDisabled();
+	await page.clock.fastForward(1_000);
+	await page.clock.runFor(200);
+	await expect(dialog).toBeHidden();
+	await expect(
+		page.getByRole("button", { name: "Take a photo" }),
+	).toBeEnabled();
+	await page.evaluate(() => {
+		if (document.activeElement instanceof HTMLElement)
+			document.activeElement.blur();
+	});
+	await page.keyboard.press("Enter");
+	await expect(page.getByRole("button", { name: "Get ready" })).toBeDisabled();
 });
 
 test("three-box frame shoots each box in turn, then reviews, retakes and saves one photo", async ({
@@ -1761,6 +1865,7 @@ test("three-box frame shoots each box in turn, then reviews, retakes and saves o
 		page.getByAltText("Baby-shower memory captured.jpg"),
 	).toBeVisible({ timeout: 10_000 });
 	await expect(page.getByText("Saved privately for the host.")).toBeVisible();
+	await closeSavedPreview(page);
 	await expect(page.getByRole("link", { name: "Download photo" })).toHaveCount(
 		0,
 	);
@@ -1793,7 +1898,7 @@ for (const failure of ["unconfigured", "offline"]) {
 				});
 				return;
 			}
-			await route.fulfill({ json: { saved: true } });
+			await route.fulfill({ json: savedResponse(uploaded) });
 		});
 		await page.goto("/");
 		await page.getByRole("button", { name: "Connect", exact: true }).click();
@@ -1807,6 +1912,9 @@ for (const failure of ["unconfigured", "offline"]) {
 		await expect(
 			page.getByRole("alert").filter({ hasText: "Not saved online:" }),
 		).toBeVisible({ timeout: 10_000 });
+		await expect(
+			page.getByRole("dialog", { name: "Photo memory" }),
+		).toHaveCount(0);
 		const downloadPromise = page.waitForEvent("download");
 		await page.getByRole("link", { name: "Download photo" }).click();
 		const download = await downloadPromise;
@@ -1827,7 +1935,9 @@ test("oversized captures offer download without sending a request to Vercel", as
 	let attempts = 0;
 	await page.route("**/api/photos", (route) => {
 		attempts++;
-		return route.fulfill({ json: { saved: true } });
+		return route.fulfill({
+			json: savedResponse(route.request().postDataBuffer()),
+		});
 	});
 	await page.addInitScript(() => {
 		HTMLCanvasElement.prototype.toBlob = (callback) => {
@@ -2365,7 +2475,7 @@ for (const interim of [false, true]) {
 			});
 		});
 		await page.route("**/api/photos", (route) =>
-			route.fulfill({ json: { saved: true } }),
+			route.fulfill({ json: savedResponse(route.request().postDataBuffer()) }),
 		);
 		await page.goto("/");
 		await page.getByRole("button", { name: "Connect", exact: true }).click();
@@ -2434,6 +2544,13 @@ for (const interim of [false, true]) {
 		await expect(page.getByText("Saved privately for the host.")).toBeVisible({
 			timeout: 10_000,
 		});
+		const preview = page.getByRole("dialog", { name: "Photo memory" });
+		await expect(preview).toBeVisible();
+		await speak("capture", !interim);
+		await expect(
+			page.getByRole("button", { name: "Take a photo", includeHidden: true }),
+		).toBeDisabled();
+		await closeSavedPreview(page);
 		await expect(
 			page.getByRole("button", { name: "Take a photo" }),
 		).toBeEnabled();
@@ -2448,6 +2565,7 @@ for (const interim of [false, true]) {
 		await expect(page.getByText("Saved privately for the host.")).toBeVisible({
 			timeout: 10_000,
 		});
+		await closeSavedPreview(page);
 		await page.getByRole("button", { name: "Stop voice capture" }).click();
 		await expect(page.getByText("Voice control is off.")).toBeVisible();
 		const audio = await page.evaluate(
@@ -2476,7 +2594,7 @@ test("audio failure is explicit but does not prevent capture and saving", async 
 		});
 	});
 	await page.route("**/api/photos", (route) =>
-		route.fulfill({ json: { saved: true } }),
+		route.fulfill({ json: savedResponse(route.request().postDataBuffer()) }),
 	);
 	await page.goto("/");
 	await page.getByRole("button", { name: "Connect", exact: true }).click();

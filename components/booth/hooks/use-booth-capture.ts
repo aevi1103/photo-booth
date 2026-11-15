@@ -46,7 +46,16 @@ export function useBoothCapture({
 	const resetUpload = uploadMutation.reset;
 	const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const captureBusyRef = useRef(false);
-	const { photo } = useStore(store);
+	const { photo, savedPreviewOpen } = useStore(store);
+
+	useEffect(() => {
+		if (!savedPreviewOpen) return;
+		const timer = setTimeout(
+			() => store.setState({ savedPreviewOpen: false }),
+			60_000,
+		);
+		return () => clearTimeout(timer);
+	}, [savedPreviewOpen, store]);
 
 	useEffect(
 		() => () => {
@@ -85,7 +94,7 @@ export function useBoothCapture({
 			onSuccess: () => {
 				captureBusyRef.current = false;
 				compositorRef.current?.resetSlots();
-				store.setState({ photo: null });
+				store.setState({ photo: null, savedPreviewOpen: true });
 			},
 		});
 	}
@@ -167,6 +176,7 @@ export function useBoothCapture({
 			!state.frameReady ||
 			!canCaptureFromCache(queryClient) ||
 			state.photo ||
+			state.savedPreviewOpen ||
 			state.shotIndex !== null ||
 			captureBusyRef.current ||
 			!cameraLive()
@@ -226,5 +236,8 @@ export function useBoothCapture({
 		save,
 		retake,
 		discard,
+		savedPhoto: uploadMutation.data?.photo,
+		savedPreviewOpen,
+		closeSavedPreview: () => store.setState({ savedPreviewOpen: false }),
 	};
 }

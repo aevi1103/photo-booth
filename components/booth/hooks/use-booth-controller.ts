@@ -52,7 +52,8 @@ export function useBoothController(backgrounds: Backdrop[]) {
 		camera,
 		canvasRef,
 		quota,
-		canCapture: quotaAllowsCapture(quota.status, quota.data),
+		canCapture:
+			!capture.savedPreviewOpen && quotaAllowsCapture(quota.status, quota.data),
 		startCountdown: capture.startCountdown,
 		connect: camera.connect,
 		upload: capture.upload,
@@ -61,5 +62,8 @@ export function useBoothController(backgrounds: Backdrop[]) {
 		save: capture.save,
 		retake: capture.retake,
 		prepareSound: sounds.prepare,
+		savedPhoto: capture.savedPhoto,
+		savedPreviewOpen: capture.savedPreviewOpen,
+		closeSavedPreview: capture.closeSavedPreview,
 	};
 }

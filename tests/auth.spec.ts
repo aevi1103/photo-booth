@@ -341,6 +341,8 @@ test("gallery reports partial deletion failures and retries remaining checked ph
 test("database migration is rerunnable, preserves admin roles and denies direct Storage bypass", async ({ backend }) => {
   await backend.db.exec("insert into storage.objects(bucket_id, name) values ('backdrops', 'existing.jpg');");
   await backend.db.exec("insert into public.backdrop_settings(file_name, hidden, is_default) values ('existing.jpg', false, true);");
+  await backend.db.query("insert into storage.objects(bucket_id, name) values ('photos', $1)", [`${userId}/existing.jpg`]);
+  await backend.db.query("select public.record_photo_download($1)", [`${userId}/existing.jpg`]);
   await backend.db.exec(await readFile("supabase/setup.sql", "utf8"));
   const admin = await backend.db.query<{ role: string }>("select role from public.profiles where id = $1", [adminId]);
   expect(admin.rows[0].role).toBe("admin");
@@ -348,6 +350,7 @@ test("database migration is rerunnable, preserves admin roles and denies direct 
   expect(backdrops.rows).toEqual([{ name: "existing.jpg" }]);
   const settings = await backend.db.query("select file_name, is_default from public.backdrop_settings");
   expect(settings.rows).toEqual([{ file_name: "existing.jpg", is_default: true }]);
+  expect((await backend.db.query("select download_count from public.photo_download_counts")).rows).toEqual([{ download_count: 1 }]);
   await backend.db.exec(`
     alter table storage.objects enable row level security;
     grant usage on schema storage to anon, authenticated;
@@ -360,6 +363,9 @@ test("database migration is rerunnable, preserves admin roles and denies direct 
     await expect(backend.db.exec("insert into storage.objects(bucket_id, name) values ('backdrops', 'bypass.jpg');")).rejects.toThrow(/row-level security/);
     await expect(backend.db.exec("select * from public.backdrop_settings;")).rejects.toThrow(/permission denied/);
     await expect(backend.db.exec("select public.set_backdrop_setting('existing.jpg', true, null);")).rejects.toThrow(/permission denied/);
+    await expect(backend.db.exec("select * from public.photo_download_counts;")).rejects.toThrow(/permission denied/);
+    await expect(backend.db.exec("select public.record_photo_download('existing.jpg');")).rejects.toThrow(/permission denied/);
+    await expect(backend.db.query("select * from public.get_photo_download_counts($1, $2)", [adminId, [`${userId}/existing.jpg`]])).rejects.toThrow(/permission denied/);
     await backend.db.exec("reset role;");
   }
   await backend.db.exec("drop policy test_old_permissive_policy on storage.objects;");
@@ -439,6 +445,10 @@ test("booth shows last upload and disables manual and voice capture at zero", as
   await page.getByRole("button", { name: "Take a photo" }).click();
   await page.getByRole("button", { name: "Save photo" }).click({ timeout: 30_000 });
   await expect(page.getByText("Saved privately for the host.")).toBeVisible({ timeout: 10_000 });
+  const savedPreview = page.getByRole("dialog", { name: "Photo memory" });
+  await expect(savedPreview).toBeVisible();
+  await savedPreview.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(savedPreview).toBeHidden();
   await expect(page.getByText("0 of 20 photo uploads remaining")).toBeVisible();
   await expect(page.getByRole("button", { name: "Retake", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Take a photo" })).toBeDisabled();

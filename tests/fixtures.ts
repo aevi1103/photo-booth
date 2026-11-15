@@ -76,13 +76,15 @@ export const test = base.extend<{ backend: Backend }, { supabase: Backend }>({
             release_photo_upload: { sql: "select public.release_photo_upload($1) as value", args: [body.p_upload_id] },
             allow_photo_upload: { sql: "select public.allow_photo_upload() as value", args: [] },
             list_booth_photos: { sql: "select * from public.list_booth_photos($1, $2)", args: [body.p_user_id, body.p_offset] },
+            record_photo_download: { sql: "select public.record_photo_download($1) as value", args: [body.p_name] },
+            get_photo_download_counts: { sql: "select * from public.get_photo_download_counts($1, $2)", args: [body.p_user_id, body.p_names] },
             get_backdrop_settings: { sql: "select * from public.get_backdrop_settings()", args: [] },
             set_backdrop_setting: { sql: "select public.set_backdrop_setting($1, $2, $3) as value", args: [body.p_file_name, body.p_hidden, body.p_is_default] },
           };
           const fn = functions[name ?? ""];
           if (!fn) throw new Error("Unexpected RPC");
           const result = await db.query<{ value: unknown }>(fn.sql, fn.args);
-          response.end(JSON.stringify(["list_booth_photos", "get_backdrop_settings"].includes(name ?? "") ? result.rows : result.rows[0].value ?? null)); return;
+          response.end(JSON.stringify(["list_booth_photos", "get_backdrop_settings", "get_photo_download_counts"].includes(name ?? "") ? result.rows : result.rows[0].value ?? null)); return;
         }
         if (url.pathname === "/rest/v1/photo_uploads" && request.method === "PATCH") {
           await db.query("update public.photo_uploads set status = $1 where id = $2", [body.status, url.searchParams.get("id")?.replace("eq.", "")]);
@@ -176,7 +178,7 @@ export const test = base.extend<{ backend: Backend }, { supabase: Backend }>({
   }, { scope: "worker" }],
   backend: async ({ supabase }, runFixture) => {
     await supabase.db.exec(`
-      truncate public.photo_uploads, public.photo_upload_limits, public.backdrop_settings, storage.objects;
+      truncate public.photo_uploads, public.photo_upload_limits, public.backdrop_settings, public.photo_download_counts, storage.objects;
       delete from auth.users;
       insert into auth.users(id) values ('${userId}'), ('${otherId}'), ('${adminId}');
       update public.profiles set role = 'admin' where id = '${adminId}';

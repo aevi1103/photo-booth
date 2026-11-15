@@ -4,6 +4,7 @@ import { Images, Printer, RefreshCw, Trash } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useId, useRef, useState } from "react";
 import { useReactToPrint } from "react-to-print";
+import { PhotoDialogContent } from "@/components/gallery/photo-dialog";
 import type { GalleryState } from "@/components/gallery/use-gallery";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Button } from "@/components/ui/button";
@@ -31,7 +32,6 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { ShareButton } from "@/features/share/ShareButton";
 import { useQuota } from "@/lib/queries/account";
 import { useDeletePhoto } from "@/lib/queries/photos";
 import { cn } from "@/lib/utils";
@@ -50,7 +50,6 @@ export function GalleryPhotos({
 	const [viewedName, setViewedName] = useState<string | null>(null);
 	const [carousel, setCarousel] = useState<CarouselApi>();
 	const scrollRef = useRef<HTMLDivElement>(null);
-	const previewRef = useRef<HTMLImageElement>(null);
 	const newestName = gallery.photos[0]?.name;
 	const previousNewest = useRef(newestName);
 	useEffect(() => {
@@ -308,6 +307,11 @@ export function GalleryPhotos({
 														>
 															{new Date(photo.createdAt).toLocaleString()}
 														</time>
+														{canDelete && photo.downloadCount !== undefined && (
+															<span className="text-xs text-muted-foreground">
+																{photo.downloadCount} downloads
+															</span>
+														)}
 														<div className="flex items-center gap-2">
 															{!booth && (
 																<Button
@@ -423,73 +427,9 @@ export function GalleryPhotos({
 						)}
 					</div>
 				</div>
-				<DialogContent
-					className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-4xl"
-					overlayProps={{
-						className: "bg-black/40 supports-backdrop-filter:backdrop-blur-md",
-						forceRender: true,
-					}}
-				>
-					<DialogHeader>
-						<DialogTitle>Photo memory</DialogTitle>
-						<DialogDescription>
-							{viewedPhoto && new Date(viewedPhoto.createdAt).toLocaleString()}
-						</DialogDescription>
-					</DialogHeader>
-					{viewedPhoto && (
-						<>
-							<div className="flex flex-wrap items-start gap-3">
-								{viewedPhoto.shareUrl && (
-									<ShareButton
-										imageUrl={`${viewedPhoto.shareUrl}/image`}
-										pageUrl={viewedPhoto.shareUrl}
-										title="Nugget Photo Booth memory"
-									/>
-								)}
-								<Button
-									variant="outline"
-									size="sm"
-									disabled={failedUrls.has(viewedPhoto.url)}
-									onClick={() => {
-										setPrintError("");
-										const content = previewRef.current;
-										if (!content) {
-											setPrintError("Could not print photo. Please try again.");
-											return;
-										}
-										printPhoto(() => content);
-									}}
-								>
-									<Printer data-icon="inline-start" />
-									Print
-								</Button>
-								{viewedPhoto.shareUrl && (
-									<p className="text-sm text-muted-foreground">
-										Shared links let anyone view this photo for seven days.
-									</p>
-								)}
-							</div>
-							{printError && <p role="alert">{printError}</p>}
-							<Image
-								ref={previewRef}
-								src={viewedPhoto.url}
-								alt="Full-size baby-shower memory"
-								width={1536}
-								height={1024}
-								unoptimized
-								referrerPolicy="no-referrer"
-								className="max-h-[70dvh] w-full object-contain"
-								onError={() => markImageFailed(viewedPhoto.url)}
-							/>
-							{failedUrls.has(viewedPhoto.url) && (
-								<p role="alert">
-									Image unavailable or link expired. Close this dialog and
-									refresh photos to retry.
-								</p>
-							)}
-						</>
-					)}
-				</DialogContent>
+				{viewedPhoto && (
+					<PhotoDialogContent key={viewedPhoto.name} photo={viewedPhoto} />
+				)}
 			</section>
 		</Dialog>
 	);

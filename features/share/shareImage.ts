@@ -52,12 +52,28 @@ export async function shareImage(
 }
 
 export async function downloadImage(imageUrl: string) {
-	const file = await imageFile(imageUrl);
-	const url = URL.createObjectURL(file);
+	const response = await fetch(imageUrl.replace(/\/image$/, "/download"), {
+		method: "POST",
+		cache: "no-store",
+	});
+	if (!response.ok) throw new Error("Could not download the image.");
+	const blob = await response.blob();
+	const extension =
+		blob.type === "image/png"
+			? "png"
+			: blob.type === "image/webp"
+				? "webp"
+				: "jpg";
+	if (
+		!["image/jpeg", "image/png", "image/webp"].includes(blob.type) ||
+		!blob.size
+	)
+		throw new Error("The image is unavailable.");
+	const url = URL.createObjectURL(blob);
 	const link = document.createElement("a");
 	try {
 		link.href = url;
-		link.download = file.name;
+		link.download = `photo-memory.${extension}`;
 		document.body.append(link);
 		link.click();
 	} finally {

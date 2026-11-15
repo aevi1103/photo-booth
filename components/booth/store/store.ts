@@ -25,6 +25,7 @@ export const initialSettings: Settings = {
 export type BoothState = {
 	settings: Settings;
 	galleryVisible: boolean;
+	savedPreviewOpen: boolean;
 	devices: MediaDeviceInfo[];
 	deviceId: string;
 	background: string;
@@ -58,6 +59,7 @@ export function createBoothStore(backgrounds: Backdrop[]) {
 			() => ({
 				settings: initialSettings,
 				galleryVisible: true,
+				savedPreviewOpen: false,
 				devices: [],
 				deviceId: "",
 				background: backgrounds[0]?.url ?? "",

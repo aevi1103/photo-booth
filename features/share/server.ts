@@ -36,7 +36,7 @@ export const sharedPhotoExists = cache(async (id: string) => {
 	return data.some((item) => item.name === file && Boolean(item.id));
 });
 
-function readShareId(id: string) {
+export function readShareId(id: string) {
 	if (id.length > 8192) return null;
 	const [payload, signature, extra] = id.split(".");
 	if (

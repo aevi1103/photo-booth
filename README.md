@@ -59,6 +59,8 @@ To install the booth, use your browser's install or add-to-home-screen option. O
 
 Choose **Take a photo** or enable voice capture and say **“capture”**. One trigger shoots every photo opening in the frame in turn (three for the default frame): the next opening shows the live camera with a five-second countdown and a “Photo N of 3” label, each shot freezes in its opening, and the booth pauses briefly before moving on. The other openings stay empty until their turn. After the last shot, review the combined picture and choose **Retake** to reshoot every opening or **Save photo** to upload one framed JPEG, which uses one upload slot. Once saving succeeds, the live camera returns and the gallery refreshes with the newest photo first. The camera is mirrored by default in both the preview and saved photo. Each visit starts mirrored; turning **Mirror** off lasts only until the page is reloaded. Wait for the save confirmation; the shutter sound means a shot was taken, not that anything was uploaded. A camera interruption mid-sequence discards the shots taken so far.
 
+After a successful save, the saved image opens automatically in the gallery-style preview, even if the sidebar is hidden or refreshing fails. Scan the QR code beside the image to open its shared page on your phone, then choose **Download image** without signing in. The preview closes after **one minute**, or immediately with Close or Escape. Manual, Enter-key, and voice capture pause until it closes. Closing the preview does not expire its **seven-day** link. On smaller screens the QR code sits below the image; previews opened manually from gallery thumbnails do not auto-close.
+
 While saving, another capture is blocked. If saving fails, the image stays available with **Retry saving**, **Download photo**, and **Discard photo**. Discard explicitly gives up that unsaved image and returns to the camera. Open **Menu → View gallery** for the standalone gallery and printing.
 
 ## Using the booth
@@ -97,7 +99,11 @@ Admins can choose **Delete** on a photo, or check multiple photos and choose **D
 
 ### Share a photo
 
+Both gallery and after-save previews show a QR code linked to the public photo page. For scanning on another device, `APP_URL` must be a reachable HTTPS deployment or trusted tunnel, not the booth computer's localhost address.
+
 Open a thumbnail, then choose **Share** above the full-size image. Supported mobile Safari/Chrome browsers open the system share sheet with the actual image file. Cancelling does nothing. If the browser blocks sharing after a slow image download, close the popover and tap Share again; the prepared image is reused. Where file sharing is unavailable, the popover offers Facebook, X, WhatsApp, **Copy link** (with a Copied toast), and **Download image**.
+
+Admins see a per-photo **downloads** count only on the standalone `/gallery` page. Counts persist in the database; rerun all of `supabase/setup.sql` before deploying this upgrade. Every successful explicit **Download image** request from the shared page or gallery share menu counts, including repeats. Views, QR scans, prints, native/social sharing, and failed requests do not count. The metric measures files served by the server, not confirmed completion of a device's save. Refresh the gallery to update counts. Counts are not returned to ordinary users, and direct client access to the counter table is disabled.
 
 Facebook and X share a public page, not an uploaded file. Only photos already authorized for the current gallery receive signed, unguessable links. Anyone with a link can view that photo without signing in for **seven days from link creation**. The private bucket stays private; the server validates the signed token before reading the image. Links and image responses are not persistently cached by the app. Deleting the original makes future requests fail, but cannot revoke downloads, screenshots, or social-platform caches. Refreshing the gallery creates fresh links. Rotating the server secret invalidates existing share links. These public links are excluded from search indexing, but are not confidential once shared.
 

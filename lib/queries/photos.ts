@@ -16,6 +16,7 @@ export type GalleryPhoto = {
 	createdAt: string;
 	url: string;
 	shareUrl?: string;
+	downloadCount?: number;
 };
 export type PhotoPage = { photos: GalleryPhoto[]; nextOffset: number | null };
 
@@ -36,7 +37,11 @@ function isGalleryPhoto(value: unknown): value is GalleryPhoto {
 		typeof value.name === "string" &&
 		typeof value.createdAt === "string" &&
 		typeof value.url === "string" &&
-		(value.shareUrl === undefined || typeof value.shareUrl === "string")
+		(value.shareUrl === undefined || typeof value.shareUrl === "string") &&
+		(value.downloadCount === undefined ||
+			(typeof value.downloadCount === "number" &&
+				Number.isSafeInteger(value.downloadCount) &&
+				value.downloadCount >= 0))
 	);
 }
 
@@ -130,16 +135,26 @@ export function useDeletePhoto() {
 	});
 }
 
-async function uploadPhoto(blob: Blob): Promise<{ quota?: PhotoQuota }> {
+async function uploadPhoto(
+	blob: Blob,
+): Promise<{ quota?: PhotoQuota; photo: GalleryPhoto }> {
 	if (blob.size > MAX_PHOTO_BYTES) throw new Error(PHOTO_SIZE_ERROR);
 	const body = await requestJson("/api/photos", "Could not save photo.", {
 		method: "POST",
 		headers: { "Content-Type": "image/jpeg" },
 		body: blob,
 	});
-	if (!isRecord(body) || body.saved !== true)
+	if (
+		!isRecord(body) ||
+		body.saved !== true ||
+		!isGalleryPhoto(body.photo) ||
+		!body.photo.shareUrl
+	)
 		throw new Error("The server did not confirm that the photo was saved.");
-	return { quota: isPhotoQuota(body.quota) ? body.quota : undefined };
+	return {
+		quota: isPhotoQuota(body.quota) ? body.quota : undefined,
+		photo: body.photo,
+	};
 }
 
 export function useUploadPhoto() {

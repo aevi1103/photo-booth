@@ -1,4 +1,5 @@
 import { createHmac } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import type { Page } from "@playwright/test";
 import {
 	adminId,
@@ -35,6 +36,186 @@ async function openPhoto(page: Page, path = "/gallery") {
 		page.getByRole("heading", { name: "Photo memory" }),
 	).toBeVisible();
 }
+
+test("explicit anonymous downloads count repeats, not views, and recover from failures", async ({
+	page,
+	request,
+	backend,
+}) => {
+	const { photos } = await (await request.get("/api/photos")).json();
+	const url: string = photos[0].shareUrl;
+	await page.context().clearCookies();
+	await page.goto(url);
+	await expect(
+		page.getByRole("img", { name: "Nugget Photo Booth memory" }),
+	).toHaveJSProperty("naturalWidth", 1);
+	expect(
+		(await backend.db.query("select * from public.photo_download_counts")).rows,
+	).toEqual([]);
+	const button = page.getByRole("button", { name: "Download image" });
+	for (const expected of [1, 2]) {
+		const waiting = page.waitForEvent("download");
+		await button.click();
+		const download = await waiting;
+		expect(download.suggestedFilename()).toBe("photo-memory.png");
+		expect(await readFile(await download.path())).toEqual(png);
+		expect(
+			(
+				await backend.db.query(
+					"select download_count from public.photo_download_counts",
+				)
+			).rows,
+		).toEqual([{ download_count: expected }]);
+	}
+	backend.storageError = 503;
+	await button.click();
+	await expect(
+		page.getByRole("alert").filter({ hasText: "Could not download" }),
+	).toBeVisible();
+	expect(
+		(
+			await backend.db.query(
+				"select download_count from public.photo_download_counts",
+			)
+		).rows,
+	).toEqual([{ download_count: 2 }]);
+	backend.storageError = null;
+	await backend.db.exec(
+		"alter table public.photo_download_counts add constraint test_count_failure check (download_count < 3)",
+	);
+	try {
+		await button.click();
+		await expect(button).toBeEnabled();
+		await expect(
+			page.getByRole("alert").filter({ hasText: "Could not download" }),
+		).toBeVisible();
+		expect(
+			(
+				await backend.db.query(
+					"select download_count from public.photo_download_counts",
+				)
+			).rows,
+		).toEqual([{ download_count: 2 }]);
+	} finally {
+		await backend.db.exec(
+			"alter table public.photo_download_counts drop constraint test_count_failure",
+		);
+	}
+	const waiting = page.waitForEvent("download");
+	await button.click();
+	await waiting;
+	expect(
+		(
+			await backend.db.query(
+				"select download_count from public.photo_download_counts",
+			)
+		).rows,
+	).toEqual([{ download_count: 3 }]);
+});
+
+test("download counts are atomic, admin-only, and visible only in the standalone admin gallery", async ({
+	page,
+	request,
+	backend,
+	playwright,
+}) => {
+	const { photos } = await (await request.get("/api/photos")).json();
+	const download = `${photos[0].shareUrl}/download`;
+	const responses = await Promise.all(
+		Array.from({ length: 10 }, () => request.post(download)),
+	);
+	expect(responses.every((response) => response.ok())).toBe(true);
+	expect((await request.get(download)).status()).toBe(405);
+	expect((await request.head(download)).status()).toBe(405);
+	expect(
+		(
+			await request.post(download, {
+				headers: { origin: "https://example.com" },
+			})
+		).status(),
+	).toBe(403);
+	const guest = await (await request.get("/api/photos")).json();
+	expect(guest.photos[0]).not.toHaveProperty("downloadCount");
+	const admin = await playwright.request.newContext({
+		baseURL: "http://127.0.0.1:3210",
+		storageState: { cookies: [sessionCookie(adminId)], origins: [] },
+	});
+	try {
+		const listing = await (await admin.get("/api/photos")).json();
+		expect(
+			listing.photos.find((photo: { name: string }) => photo.name === name)
+				.downloadCount,
+		).toBe(10);
+		expect(
+			listing.photos.find((photo: { name: string }) => photo.name === otherName)
+				.downloadCount,
+		).toBe(0);
+		expect(
+			(
+				await backend.db.query(
+					"select * from public.get_photo_download_counts($1, $2)",
+					[userId, [name]],
+				)
+			).rows,
+		).toEqual([]);
+		await page.context().addCookies([sessionCookie(adminId)]);
+		await page.goto("/gallery");
+		await expect(page.getByText("10 downloads", { exact: true })).toBeVisible();
+		await expect(page.getByText("0 downloads", { exact: true })).toBeVisible();
+		await page.goto("/");
+		await expect(
+			page.getByRole("button", { name: `Open photo ${name}` }),
+		).toBeVisible();
+		await expect(page.getByText("10 downloads", { exact: true })).toHaveCount(
+			0,
+		);
+		await page.context().addCookies([sessionCookie()]);
+		await page.goto("/gallery");
+		await expect(
+			page.getByRole("button", { name: `Open photo ${name}` }),
+		).toBeVisible();
+		await expect(page.getByText("10 downloads", { exact: true })).toHaveCount(
+			0,
+		);
+	} finally {
+		await admin.dispose();
+	}
+});
+
+test("QR preview lays out beside the photo, stacks on mobile, and gallery stays open", async ({
+	page,
+}) => {
+	await openPhoto(page);
+	const dialog = page.getByRole("dialog", { name: "Photo memory" });
+	const qr = dialog.getByRole("region", { name: "Scan to download" });
+	const image = dialog.getByRole("img", {
+		name: "Full-size baby-shower memory",
+	});
+	await expect(qr.locator('[data-slot="qr-code-frame"] path')).toBeVisible();
+	await expect
+		.poll(async () => {
+			const photoBox = await image.boundingBox();
+			const qrBox = await qr.boundingBox();
+			return !!photoBox && !!qrBox && qrBox.x >= photoBox.x + photoBox.width;
+		})
+		.toBe(true);
+	await page.clock.install();
+	await page.clock.fastForward(61_000);
+	await expect(dialog).toBeVisible();
+	await page.setViewportSize({ width: 390, height: 844 });
+	await expect
+		.poll(async () => {
+			const photoBox = await image.boundingBox();
+			const qrBox = await qr.boundingBox();
+			return !!photoBox && !!qrBox && qrBox.y >= photoBox.y + photoBox.height;
+		})
+		.toBe(true);
+	expect(
+		await dialog.evaluate(
+			(element) => element.scrollWidth <= element.clientWidth,
+		),
+	).toBe(true);
+});
 
 for (const path of ["/", "/gallery"]) {
 	test(`photo preview blurs the backdrop and prints only its image on ${path}`, async ({
@@ -268,6 +449,9 @@ test("tampered, expired, missing and deleted shares cannot read private photos",
 		]) {
 			const response = await anonymous.get(`/share/${invalid}/image`);
 			expect(response.status()).toBe(404);
+			expect(
+				(await anonymous.post(`/share/${invalid}/download`)).status(),
+			).toBe(404);
 		}
 		const page = await anonymous.get("/share/not-a-token", {
 			headers: { "user-agent": "facebookexternalhit/1.1" },
@@ -281,6 +465,11 @@ test("tampered, expired, missing and deleted shares cannot read private photos",
 			).ok(),
 		).toBe(true);
 		expect((await anonymous.get(`${url}/image`)).status()).toBe(404);
+		expect((await anonymous.post(`${url}/download`)).status()).toBe(404);
+		expect(
+			(await backend.db.query("select * from public.photo_download_counts"))
+				.rows,
+		).toEqual([]);
 		expect(backend.objects.has(otherName)).toBe(true);
 	} finally {
 		await anonymous.dispose();
@@ -360,6 +549,7 @@ test("share image reports storage outages without treating them as missing photo
 
 test("image dialog shares a File from a user click without opening the fallback", async ({
 	page,
+	backend,
 }) => {
 	await mockNative(page, "native");
 	await openPhoto(page, "/");
@@ -386,6 +576,9 @@ test("image dialog shares a File from a user click without opening the fallback"
 	).toBe("true");
 	await expect(page.locator('[data-slot="popover-content"]')).toHaveCount(0);
 	await expect(share).toBeEnabled();
+	expect(
+		(await backend.db.query("select * from public.photo_download_counts")).rows,
+	).toEqual([]);
 });
 
 test("native share cancellation is ignored", async ({ page }) => {
@@ -403,6 +596,7 @@ test("native share cancellation is ignored", async ({ page }) => {
 
 test("unsupported file sharing offers correctly encoded social links, copy toast and image download", async ({
 	page,
+	backend,
 }) => {
 	await mockNative(page, "unsupported");
 	await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
@@ -447,6 +641,16 @@ test("unsupported file sharing offers correctly encoded social links, copy toast
 	const download = await downloaded;
 	expect(download.suggestedFilename()).toBe("photo-memory.png");
 	expect(await download.failure()).toBeNull();
+	const secondDownload = page.waitForEvent("download");
+	await popover.getByRole("button", { name: "Download image" }).click();
+	await secondDownload;
+	expect(
+		(
+			await backend.db.query(
+				"select download_count from public.photo_download_counts",
+			)
+		).rows,
+	).toEqual([{ download_count: 2 }]);
 	expect(
 		await page.evaluate(() => sessionStorage.getItem("share-calls")),
 	).toBeNull();
