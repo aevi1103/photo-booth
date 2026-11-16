@@ -240,6 +240,10 @@ test("iPad sends only the photo to native sharing and can retry after losing act
   await page.context().addInitScript(() => {
     Object.defineProperty(navigator, "platform", { value: "MacIntel" });
     Object.defineProperty(navigator, "maxTouchPoints", { value: 5 });
+    window.open = () => {
+      document.body.dataset.printPopup = "opened";
+      return null;
+    };
     Object.defineProperty(navigator, "canShare", { configurable: true, value: (data: ShareData) => data.files?.length === 1 });
     let attempts = 0;
     Object.defineProperty(navigator, "share", { configurable: true, value: async (data: ShareData) => {
@@ -265,6 +269,7 @@ test("iPad sends only the photo to native sharing and can retry after losing act
   expect(shared).toEqual({ keys: ["files"], name: "photo-memory.jpg", type: "image/jpeg", size: image.length, active: true });
   expect(fetches).toBe(1);
   expect(page.context().pages()).toHaveLength(1);
+  await expect(page.locator("body")).not.toHaveAttribute("data-print-popup");
 
   await page.evaluate(() => {
     Object.defineProperty(navigator, "share", { configurable: true, value: async () => { throw new DOMException("Cancelled", "AbortError"); } });

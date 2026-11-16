@@ -1,7 +1,5 @@
 "use client";
 
-type PrintOptions = { mode?: "iframe" | "route" };
-
 export function isIPadOrIPhone() {
 	return (
 		/iPad|iPhone|iPod/.test(navigator.userAgent) ||
@@ -9,17 +7,7 @@ export function isIPadOrIPhone() {
 	);
 }
 
-export async function printImage(
-	src: string,
-	options: PrintOptions = {},
-): Promise<void> {
-	const useRoute =
-		options.mode === "route" || (!options.mode && isIPadOrIPhone());
-	// Open synchronously so Safari does not block the new tab after the fetch.
-	const printWindow = useRoute ? window.open("about:blank", "_blank") : null;
-	if (useRoute && !printWindow)
-		throw new Error("The print window was blocked.");
-
+export async function printImage(src: string): Promise<void> {
 	let objectUrl: string | undefined;
 	try {
 		const response = await fetch(src, { cache: "no-store" });
@@ -29,15 +17,6 @@ export async function printImage(
 			throw new Error("The photo is unavailable.");
 		}
 		objectUrl = URL.createObjectURL(blob);
-
-		if (printWindow) {
-			const url = new URL("/print", window.location.origin);
-			url.searchParams.set("src", objectUrl);
-			printWindow.location.replace(url.href);
-			const urlToRevoke = objectUrl;
-			window.setTimeout(() => URL.revokeObjectURL(urlToRevoke), 60_000);
-			return;
-		}
 
 		const iframe = document.createElement("iframe");
 		iframe.title = "Photo print";
@@ -100,7 +79,6 @@ export async function printImage(
 		}
 	} catch (error) {
 		if (objectUrl) URL.revokeObjectURL(objectUrl);
-		printWindow?.close();
 		throw error;
 	}
 }

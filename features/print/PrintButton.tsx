@@ -71,12 +71,7 @@ export function PrintButton({
 							setMessage("Photo ready. Tap Print again, then choose Print.");
 							return;
 						}
-						setError(
-							error instanceof Error &&
-								error.message === "The print window was blocked."
-								? "Allow pop-ups for this site, then try printing again."
-								: "Could not print photo. Please try again.",
-						);
+						setError("Could not print photo. Please try again.");
 					} finally {
 						setBusy(false);
 					}
