@@ -36,7 +36,7 @@ test("automatic capture waits for a face and cancels only the first countdown", 
 
 	await page.evaluate(() => Object.assign(window, { showTestFace: true }));
 	const toast = page.locator('[data-slot="toast"]').filter({
-		hasText: "Face detected. Hold still for 3 seconds.",
+		hasText: "Face detected. Hold still for 1 second.",
 	});
 	const expectCentered = async () => {
 		await expect

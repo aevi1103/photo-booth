@@ -18,7 +18,7 @@ export type UploadView = {
 	message: string;
 };
 
-const COUNTDOWN_SECONDS = 5;
+const COUNTDOWN_SECONDS = 3;
 // Lets guests see the shot land and reposition before the next box starts.
 const BETWEEN_SHOTS_MS = 1500;
 const CAMERA_NOT_READY =
@@ -204,7 +204,11 @@ export function useBoothCapture({
 		captureBusyRef.current = true;
 		resetUpload();
 		compositorRef.current?.resetSlots();
-		store.setState({ message: "", autoCountdown: automatic });
+		store.setState({
+			message: "",
+			autoCountdown: automatic,
+			autoCapturePaused: false,
+		});
 		countdown(0);
 	}
 
@@ -240,8 +244,8 @@ export function useBoothCapture({
 
 	function retake() {
 		if (uploadMutation.status !== "idle") return;
+		store.setState({ autoCapturePaused: true });
 		discard();
-		startCountdown();
 	}
 
 	const uploadView: UploadView =

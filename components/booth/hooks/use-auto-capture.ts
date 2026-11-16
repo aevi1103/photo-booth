@@ -7,6 +7,7 @@ import { useStore } from "zustand";
 import type { BoothStore } from "@/components/booth/store/store";
 import {
 	createFaceStillnessTracker,
+	isFaceInCaptureArea,
 	STILLNESS_SECONDS,
 } from "@/lib/face-stillness";
 import { canCaptureFromCache } from "@/lib/queries/account";
@@ -94,9 +95,10 @@ export function useAutoCapture({
 			if (!lastFrameAt || now - lastFrameAt > MAX_FRAME_AGE_MS) return null;
 			lastTimestamp = Math.max(now, lastTimestamp + 0.01);
 			const result = detector.detectForVideo(video, lastTimestamp);
-			return result.detections.flatMap((detection) =>
+			const faces = result.detections.flatMap((detection) =>
 				detection.boundingBox ? [detection.boundingBox] : [],
 			);
+			return { faces, width: video.videoWidth, height: video.videoHeight };
 		};
 		const fail = (error: unknown) => {
 			console.error("Automatic face detection failed:", error);
@@ -106,8 +108,8 @@ export function useAutoCapture({
 		};
 		const checkFace = () => {
 			try {
-				const faces = detect();
-				return faces !== null && faces.length > 0;
+				const result = detect();
+				return result !== null && result.faces.length > 0;
 			} catch (error) {
 				fail(error);
 				return false;
@@ -118,18 +120,32 @@ export function useAutoCapture({
 		const sample = () => {
 			if (cancelled) return;
 			try {
-				const faces = detect();
-				if (!faces?.length) {
+				const result = detect();
+				if (!result?.faces.length) {
 					tracker.reset();
 					cancel();
+					if (result && store.getState().autoCapturePaused)
+						store.setState({ autoCapturePaused: false });
 					setStatus("Waiting for a face.");
-				} else if (tracker.update(faces, performance.now())) {
-					startRef.current();
-					setStatus("Face detected.");
-				} else {
+				} else if (store.getState().autoCapturePaused) {
+					tracker.reset();
 					setStatus(
-						`Face detected. Hold still for ${STILLNESS_SECONDS} seconds.`,
+						"Automatic capture paused. Step out of view or take a photo.",
 					);
+				} else {
+					const faces = result.faces.filter((face) =>
+						isFaceInCaptureArea(face, result.width, result.height),
+					);
+					if (tracker.update(faces, performance.now())) {
+						startRef.current();
+						setStatus("Face detected.");
+					} else {
+						setStatus(
+							faces.length
+								? `Face detected. Hold still for ${STILLNESS_SECONDS} second.`
+								: "Face detected. Center your face and adjust your distance.",
+						);
+					}
 				}
 				timer = setTimeout(sample, SAMPLE_MS);
 			} catch (error) {

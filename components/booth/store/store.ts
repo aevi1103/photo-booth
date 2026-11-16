@@ -26,6 +26,7 @@ export type BoothState = {
 	settings: Settings;
 	autoCapture: boolean;
 	autoCountdown: boolean;
+	autoCapturePaused: boolean;
 	galleryVisible: boolean;
 	savedPreviewOpen: boolean;
 	devices: MediaDeviceInfo[];
@@ -62,6 +63,7 @@ export function createBoothStore(backgrounds: Backdrop[]) {
 				settings: initialSettings,
 				autoCapture: true,
 				autoCountdown: false,
+				autoCapturePaused: false,
 				galleryVisible: true,
 				savedPreviewOpen: false,
 				devices: [],

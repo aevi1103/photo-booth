@@ -44,14 +44,22 @@ export function BackdropCarousel({
 			</h2>
 			<Carousel
 				orientation={isVertical ? "vertical" : "horizontal"}
-				className="mt-2 flex w-full min-w-0 items-center gap-2 [@media(min-width:801px)_and_(min-height:600px)]:flex-col [@media(min-width:801px)_and_(min-height:600px)]:items-stretch [@media(min-width:801px)_and_(min-height:600px)]:[&_[data-slot=carousel-content]]:max-h-[min(45vh,360px)]"
+				className="mt-2 flex w-full min-w-0 items-center gap-2 [@media(min-width:801px)_and_(min-height:600px)]:flex-col
+				 [@media(min-width:801px)_and_(min-height:600px)]:items-stretch 
+				 [@media(min-width:801px)_and_(min-height:600px)]:**:data-[slot=carousel-content]:max-h-[min(45vh,360px)]"
 			>
 				<CarouselPrevious
 					aria-label="Previous backdrops"
 					className="static size-9 shrink-0 rounded-md [@media(min-width:801px)_and_(min-height:600px)]:translate-x-0"
 				/>
-				<div className="min-w-0 flex-1 [@media(min-width:801px)_and_(min-height:600px)]:w-full [@media(min-width:801px)_and_(min-height:600px)]:flex-none">
-					<CarouselContent className="backdrop-list -ml-2 gap-0 [@media(min-width:801px)_and_(min-height:600px)]:-mt-2 [@media(min-width:801px)_and_(min-height:600px)]:ml-0">
+				<div
+					className="min-w-0 flex-1 [@media(min-width:801px)_and_(min-height:600px)]:w-full
+				 [@media(min-width:801px)_and_(min-height:600px)]:flex-none"
+				>
+					<CarouselContent
+						className="backdrop-list -ml-2 gap-0 [@media(min-width:801px)_and_(min-height:600px)]:-mt-2
+					 [@media(min-width:801px)_and_(min-height:600px)]:ml-0"
+					>
 						{backgrounds.map((item) => (
 							<CarouselItem
 								key={item.url}
@@ -60,7 +68,9 @@ export function BackdropCarousel({
 							>
 								<button
 									type="button"
-									className={`background-option block w-full min-w-0 cursor-pointer overflow-hidden rounded-[9px] border-2 text-left disabled:cursor-not-allowed disabled:opacity-60 ${background === item.url ? "selected border-[#80b7d1]" : "border-[#edf4f7]"}`}
+									className={`background-option block w-full min-w-0 cursor-pointer overflow-hidden 
+										rounded-[9px] border-2 text-left disabled:cursor-not-allowed disabled:opacity-60
+										 ${background === item.url ? "selected border-[#80b7d1]" : "border-[#edf4f7]"}`}
 									aria-pressed={background === item.url}
 									disabled={
 										countdown !== null || shotIndex !== null || photo !== null

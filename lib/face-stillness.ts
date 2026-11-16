@@ -3,12 +3,39 @@ import type { BoundingBox } from "@mediapipe/tasks-vision";
 type FaceBox = Pick<BoundingBox, "originX" | "originY" | "width" | "height">;
 type Track = { anchor: FaceBox; last: FaceBox; startedAt: number };
 
-export const STILLNESS_SECONDS = 3;
+export const STILLNESS_SECONDS = 1;
 const STILLNESS_MS = STILLNESS_SECONDS * 1_000;
 const MAX_SAMPLE_GAP_MS = 750;
 const MIN_OVERLAP = 0.4;
 const MAX_POSITION_CHANGE = 0.08;
 const MAX_SIZE_CHANGE = 0.1;
+
+export function isFaceInCaptureArea(
+	face: FaceBox,
+	width: number,
+	height: number,
+) {
+	if (
+		![face.originX, face.originY, face.width, face.height, width, height].every(
+			Number.isFinite,
+		) ||
+		width <= 0 ||
+		height <= 0
+	)
+		return false;
+	const centerX = (face.originX + face.width / 2) / width;
+	const centerY = (face.originY + face.height / 2) / height;
+	return (
+		centerX >= 0.25 &&
+		centerX <= 0.75 &&
+		centerY >= 0.25 &&
+		centerY <= 0.75 &&
+		face.width >= width * 0.1 &&
+		face.width <= width * 0.75 &&
+		face.height >= height * 0.1 &&
+		face.height <= height * 0.75
+	);
+}
 
 function overlap(a: FaceBox, b: FaceBox) {
 	const width = Math.max(

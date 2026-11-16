@@ -1769,6 +1769,75 @@ test("saved preview opens without gallery refresh, pauses capture, and resets it
 	await expect(page.getByRole("button", { name: "Get ready" })).toBeDisabled();
 });
 
+test("retake pauses automatic capture until the face leaves", async ({
+	page,
+}) => {
+	test.slow();
+	await page.setViewportSize({ width: 1400, height: 900 });
+	await mockFrame(page, 600, 400, "transparent");
+	await page.addInitScript(() => {
+		const source = document.createElement("canvas");
+		source.width = 600;
+		source.height = 650;
+		const context = source.getContext("2d");
+		if (!context) throw new Error("Could not create test camera.");
+		const image = new Image();
+		image.src = "/images/portait.jpeg";
+		Object.assign(window, { showRetakeTestFace: false });
+		navigator.mediaDevices.getUserMedia = async () => {
+			await image.decode();
+			const paint = () => {
+				context.fillStyle = "#00ff00";
+				context.fillRect(0, 0, source.width, source.height);
+				if (
+					(window as Window & { showRetakeTestFace?: boolean })
+						.showRetakeTestFace
+				)
+					context.drawImage(image, 1020, 450, 600, 650, 0, 0, 600, 650);
+				requestAnimationFrame(paint);
+			};
+			paint();
+			return source.captureStream(10);
+		};
+	});
+	await page.goto("/");
+	await page.getByRole("button", { name: "Connect", exact: true }).click();
+	await expect(page.getByText("Waiting for a face.")).toBeVisible({
+		timeout: 20_000,
+	});
+	await page.evaluate(() =>
+		Object.assign(window, { showRetakeTestFace: true }),
+	);
+	await expect(page.getByRole("button", { name: "Retake" })).toBeVisible({
+		timeout: 20_000,
+	});
+	await page.getByRole("button", { name: "Retake" }).focus();
+	await page.keyboard.press("Enter");
+	await expect(
+		page.getByRole("button", { name: "Take a photo" }),
+	).toBeEnabled();
+	await expect(
+		page.getByText("Automatic capture paused.", { exact: false }),
+	).toBeVisible();
+	await page.waitForTimeout(2_000);
+	await expect(page.getByRole("button", { name: "Take a photo" })).toBeEnabled();
+
+	await page.evaluate(() =>
+		Object.assign(window, { showRetakeTestFace: false }),
+	);
+	await expect(page.getByText("Waiting for a face.")).toBeVisible();
+	await page.evaluate(() =>
+		Object.assign(window, { showRetakeTestFace: true }),
+	);
+	await expect(page.getByRole("button", { name: "Retake" })).toBeVisible({
+		timeout: 20_000,
+	});
+	await page.getByRole("button", { name: "Retake" }).focus();
+	await page.keyboard.press("Enter");
+	await page.getByRole("button", { name: "Take a photo" }).click();
+	await expect(page.getByRole("button", { name: "Get ready" })).toBeDisabled();
+});
+
 test("three-box frame shoots each box in turn, then reviews, retakes and saves one photo", async ({
 	page,
 }) => {
@@ -1781,6 +1850,7 @@ test("three-box frame shoots each box in turn, then reviews, retakes and saves o
 			uploads++;
 	});
 	await page.goto("/");
+	await page.getByRole("button", { name: "Automatic capture" }).click();
 	await page.getByRole("button", { name: "Connect", exact: true }).click();
 	await expect(page.getByText("LIVE", { exact: true })).toBeVisible();
 	const capture = page.getByRole("button", { name: "Take a photo" });
@@ -1797,7 +1867,7 @@ test("three-box frame shoots each box in turn, then reviews, retakes and saves o
 	await page.keyboard.press("Enter");
 	const progress = page.locator(".preview").getByRole("status");
 	await expect(progress).toHaveText("Photo 1 of 3");
-	for (const value of [5, 4, 3, 2, 1]) {
+	for (const value of [3, 2, 1]) {
 		await expect(
 			page.locator(".preview").getByText(String(value), { exact: true }),
 		).toBeVisible();
@@ -1835,31 +1905,33 @@ test("three-box frame shoots each box in turn, then reviews, retakes and saves o
 				}
 			).boothAudioEvents,
 	);
-	const shot = [...Array(5).fill("countdown"), "shutter"];
+	const shot = [...Array(3).fill("countdown"), "shutter"];
 	expect(sounds?.map((sound) => sound.kind)).toEqual([
 		...shot,
 		...shot,
 		...shot,
 	]);
-	expect(sounds?.slice(0, 5).every((sound) => sound.frequency === 880)).toBe(
+	expect(sounds?.slice(0, 3).every((sound) => sound.frequency === 880)).toBe(
 		true,
 	);
-	expect(sounds?.[5]).toMatchObject({
+	expect(sounds?.[3]).toMatchObject({
 		duration: expect.closeTo(0.18, 2),
 		hasSignal: true,
 	});
-	for (let index = 1; index < 6; index++) {
+	for (let index = 1; index < 4; index++) {
 		expect(sounds![index].time - sounds![index - 1].time).toBeGreaterThan(700);
 	}
-	expect(sounds![5].time - sounds![0].time).toBeGreaterThanOrEqual(4_900);
+	expect(sounds![3].time - sounds![0].time).toBeGreaterThanOrEqual(2_900);
 
 	await page.getByRole("button", { name: "Retake" }).click();
-	await expect(progress).toHaveText("Photo 1 of 3");
+	await expect(progress).toHaveCount(0);
+	await expect(capture).toBeEnabled();
 	await expect(page.getByAltText("A moment at the baby shower")).toHaveCount(0);
 	await expect
 		.poll(() => boxColors(page))
 		.toEqual(["yellow|yellow", "empty|empty", "empty|empty"]);
 	await setCameraFill("");
+	await capture.click();
 	await savePhoto(page);
 	await expect(
 		page.getByAltText("Baby-shower memory captured.jpg"),
@@ -2574,7 +2646,7 @@ for (const interim of [false, true]) {
 					.boothAudioEvents,
 		);
 		expect(audio?.filter((event) => event.kind === "countdown")).toHaveLength(
-			30,
+			18,
 		);
 		expect(audio?.filter((event) => event.kind === "shutter")).toHaveLength(6);
 	});
