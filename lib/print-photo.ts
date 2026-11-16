@@ -1,10 +1,11 @@
+let cleanupPreviousPrint: (() => void) | undefined;
+
 export function printPhoto(image: HTMLImageElement | null) {
 	if (!image?.complete || !image.naturalWidth) {
 		throw new Error("The photo is not ready to print.");
 	}
 
-	const previous = document.querySelector("[data-photo-print]");
-	previous?.remove();
+	cleanupPreviousPrint?.();
 
 	const content = document.createElement("div");
 	content.dataset.photoPrint = "";
@@ -29,12 +30,19 @@ export function printPhoto(image: HTMLImageElement | null) {
 	content.prepend(style);
 	document.body.append(content);
 
-	const cleanup = () => content.remove();
-	window.addEventListener("afterprint", cleanup, { once: true });
+	const cleanup = () => {
+		window.removeEventListener("pointerdown", cleanup, true);
+		window.removeEventListener("keydown", cleanup, true);
+		content.remove();
+		cleanupPreviousPrint = undefined;
+	};
+	cleanupPreviousPrint = cleanup;
+	// Safari can fire afterprint before the print preview captures the page.
+	window.addEventListener("pointerdown", cleanup, true);
+	window.addEventListener("keydown", cleanup, true);
 	try {
 		window.print();
 	} catch (error) {
-		window.removeEventListener("afterprint", cleanup);
 		cleanup();
 		throw error;
 	}

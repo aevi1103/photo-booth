@@ -172,6 +172,7 @@ test("gallery prints only the selected photo and disables printing unavailable i
         images: [...document.querySelectorAll<HTMLImageElement>("[data-photo-print] img")].map((img) => img.src),
         imageReady: [...document.querySelectorAll<HTMLImageElement>("[data-photo-print] img")].every((img) => img.complete && img.naturalWidth > 0),
       });
+      window.dispatchEvent(new Event("afterprint"));
     };
   });
   await page.goto("/gallery");
@@ -198,8 +199,11 @@ test("gallery prints only the selected photo and disables printing unavailable i
     expect(imageStyle.fit).toBe("contain");
     expect(imageStyle.width).toBe(imageStyle.viewportWidth);
     expect(imageStyle.height).toBe(imageStyle.viewportHeight);
+    const pdf = await page.pdf();
+    expect(pdf.toString("latin1").match(/\/Type\s*\/Page\b/g)).toHaveLength(1);
+    expect(pdf.toString("latin1")).toMatch(/\/Subtype\s*\/Image\b/);
     await page.emulateMedia({ media: "screen" });
-    await page.evaluate(() => window.dispatchEvent(new Event("afterprint")));
+    await page.mouse.click(1, 1);
     await expect(printImage).toHaveCount(0);
   }
 
@@ -217,8 +221,11 @@ test("gallery prints only the selected photo and disables printing unavailable i
   await page.emulateMedia({ media: "print" });
   await expect(page.locator("[data-photo-print] img")).toBeVisible();
   await expect(dialog).toBeHidden();
+  const pdf = await page.pdf();
+  expect(pdf.toString("latin1").match(/\/Type\s*\/Page\b/g)).toHaveLength(1);
+  expect(pdf.toString("latin1")).toMatch(/\/Subtype\s*\/Image\b/);
   await page.emulateMedia({ media: "screen" });
-  await page.evaluate(() => window.dispatchEvent(new Event("afterprint")));
+  await page.keyboard.press("Shift");
   await expect(page.locator("[data-photo-print]")).toHaveCount(0);
   await page.evaluate(() => { window.print = () => { throw new Error("Printing unavailable"); }; });
   await dialog.getByRole("button", { name: "Print", exact: true }).click();
