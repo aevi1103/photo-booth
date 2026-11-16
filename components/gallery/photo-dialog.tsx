@@ -3,7 +3,6 @@
 import { Printer } from "lucide-react";
 import Image from "next/image";
 import { useRef, useState } from "react";
-import { useReactToPrint } from "react-to-print";
 import { Button } from "@/components/ui/button";
 import {
 	DialogContent,
@@ -13,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { QrCode, QrCodeFrame } from "@/components/ui/qr-code";
 import { ShareButton } from "@/features/share/ShareButton";
+import { printPhoto } from "@/lib/print-photo";
 import type { GalleryPhoto } from "@/lib/queries/photos";
 
 export function PhotoDialogContent({
@@ -26,14 +26,6 @@ export function PhotoDialogContent({
 	const [failedUrl, setFailedUrl] = useState("");
 	const [printError, setPrintError] = useState("");
 	const failed = failedUrl === photo.url;
-	const printPhoto = useReactToPrint({
-		ignoreGlobalStyles: true,
-		pageStyle:
-			"@page { size: auto; margin: 0; } body { margin: 0; } img { display: block; width: 100%; height: 100vh; object-fit: contain; }",
-		onPrintError: () =>
-			setPrintError("Could not print photo. Please try again."),
-	});
-
 	return (
 		<DialogContent
 			className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-6xl"
@@ -63,11 +55,11 @@ export function PhotoDialogContent({
 					disabled={failed}
 					onClick={() => {
 						setPrintError("");
-						if (!previewRef.current) {
+						try {
+							printPhoto(previewRef.current);
+						} catch {
 							setPrintError("Could not print photo. Please try again.");
-							return;
 						}
-						printPhoto(() => previewRef.current);
 					}}
 				>
 					<Printer data-icon="inline-start" />

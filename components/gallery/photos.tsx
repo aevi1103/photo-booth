@@ -3,7 +3,6 @@
 import { Images, Printer, RefreshCw, Trash } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useId, useRef, useState } from "react";
-import { useReactToPrint } from "react-to-print";
 import { PhotoDialogContent } from "@/components/gallery/photo-dialog";
 import type { GalleryState } from "@/components/gallery/use-gallery";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
@@ -32,6 +31,7 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { printPhoto } from "@/lib/print-photo";
 import { useQuota } from "@/lib/queries/account";
 import { useDeletePhoto } from "@/lib/queries/photos";
 import { cn } from "@/lib/utils";
@@ -64,13 +64,6 @@ export function GalleryPhotos({
 	const [selectedNames, setSelectedNames] = useState<ReadonlySet<string>>(
 		new Set(),
 	);
-	const printPhoto = useReactToPrint({
-		ignoreGlobalStyles: true,
-		pageStyle:
-			"@page { size: auto; margin: 0; } body { margin: 0; } img { display: block; width: 100%; height: 100vh; object-fit: contain; }",
-		onPrintError: () =>
-			setPrintError("Could not print photo. Please try again."),
-	});
 	const deletion = useDeletePhoto();
 	const {
 		photos,
@@ -322,16 +315,18 @@ export function GalleryPhotos({
 																	disabled={failedUrls.has(photo.url)}
 																	onClick={(event) => {
 																		setPrintError("");
-																		const content = event.currentTarget
+																		const image = event.currentTarget
 																			.closest("figure")
-																			?.querySelector("[data-print-photo]");
-																		if (!content) {
+																			?.querySelector<HTMLImageElement>(
+																				"[data-print-photo] img",
+																			);
+																		try {
+																			printPhoto(image ?? null);
+																		} catch {
 																			setPrintError(
 																				"Could not print photo. Please try again.",
 																			);
-																			return;
 																		}
-																		printPhoto(() => content);
 																	}}
 																>
 																	<Printer />

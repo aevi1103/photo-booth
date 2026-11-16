@@ -166,44 +166,64 @@ test("gallery prints only the selected photo and disables printing unavailable i
   });
   await page.addInitScript(() => {
     window.print = () => {
-      window.top?.postMessage({
-        type: "test-print",
-        images: [...document.querySelectorAll("img")].map((img) => img.src),
-        text: document.body.innerText,
-        pageMargin: [...document.styleSheets].flatMap((sheet) => [...sheet.cssRules])
-          .find((rule) => rule instanceof CSSPageRule)?.style.margin,
-        imageStyle: (() => {
-          const img = document.querySelector("img")!;
-          const style = getComputedStyle(img);
-          return {
-            width: img.getBoundingClientRect().width, height: img.getBoundingClientRect().height,
-            viewportWidth: document.documentElement.clientWidth, viewportHeight: window.innerHeight, fit: style.objectFit,
-          };
-        })(),
-      }, "*");
-    };
-    if (window === window.top) {
-      window.addEventListener("message", (event) => {
-        if (event.data?.type === "test-print") {
-          document.body.dataset.printed = JSON.stringify(event.data);
-        }
+      document.body.dataset.printed = JSON.stringify({
+        topLevel: window === window.top,
+        userActivation: navigator.userActivation.isActive,
+        images: [...document.querySelectorAll<HTMLImageElement>("[data-photo-print] img")].map((img) => img.src),
+        imageReady: [...document.querySelectorAll<HTMLImageElement>("[data-photo-print] img")].every((img) => img.complete && img.naturalWidth > 0),
       });
-    }
+    };
   });
   await page.goto("/gallery");
   await expect(page.getByRole("button", { name: `Print photo ${names[2]}` })).toBeDisabled();
   for (const name of names.slice(0, 2)) {
+    await expect.poll(() => page.getByAltText(`Baby-shower memory ${name}`).evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
     await page.getByRole("button", { name: `Print photo ${name}` }).click();
     await expect.poll(async () => page.locator("body").getAttribute("data-printed")).toContain(name);
     const printed = JSON.parse((await page.locator("body").getAttribute("data-printed"))!);
+    expect(printed.topLevel).toBe(true);
+    expect(printed.userActivation).toBe(true);
+    expect(printed.imageReady).toBe(true);
     expect(printed.images).toHaveLength(1);
     expect(printed.images[0]).toContain(name);
-    expect(printed.text).not.toContain("Delete");
-    expect(printed.pageMargin).toBe("0px");
-    expect(printed.imageStyle.fit).toBe("contain");
-    expect(printed.imageStyle.width).toBe(printed.imageStyle.viewportWidth);
-    expect(printed.imageStyle.height).toBe(printed.imageStyle.viewportHeight);
+    await page.emulateMedia({ media: "print" });
+    const printImage = page.locator("[data-photo-print] img");
+    await expect(printImage).toBeVisible();
+    await expect(page.getByRole("button", { name: `Print photo ${name}`, includeHidden: true })).toBeHidden();
+    const imageStyle = await printImage.evaluate((img) => ({
+      width: img.getBoundingClientRect().width, height: img.getBoundingClientRect().height,
+      viewportWidth: document.documentElement.clientWidth, viewportHeight: window.innerHeight,
+      fit: getComputedStyle(img).objectFit,
+    }));
+    expect(imageStyle.fit).toBe("contain");
+    expect(imageStyle.width).toBe(imageStyle.viewportWidth);
+    expect(imageStyle.height).toBe(imageStyle.viewportHeight);
+    await page.emulateMedia({ media: "screen" });
+    await page.evaluate(() => window.dispatchEvent(new Event("afterprint")));
+    await expect(printImage).toHaveCount(0);
   }
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: `Open photo ${names[0]}` }).click();
+  const dialog = page.getByRole("dialog");
+  await expect.poll(() => dialog.getByAltText("Full-size baby-shower memory").evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+  await dialog.getByRole("button", { name: "Print", exact: true }).click();
+  const printed = JSON.parse((await page.locator("body").getAttribute("data-printed"))!);
+  expect(printed.topLevel).toBe(true);
+  expect(printed.userActivation).toBe(true);
+  expect(printed.imageReady).toBe(true);
+  expect(printed.images).toHaveLength(1);
+  expect(printed.images[0]).toContain(names[0]);
+  await page.emulateMedia({ media: "print" });
+  await expect(page.locator("[data-photo-print] img")).toBeVisible();
+  await expect(dialog).toBeHidden();
+  await page.emulateMedia({ media: "screen" });
+  await page.evaluate(() => window.dispatchEvent(new Event("afterprint")));
+  await expect(page.locator("[data-photo-print]")).toHaveCount(0);
+  await page.evaluate(() => { window.print = () => { throw new Error("Printing unavailable"); }; });
+  await dialog.getByRole("button", { name: "Print", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toContainText("Could not print photo");
+  await expect(page.locator("[data-photo-print]")).toHaveCount(0);
 });
 
 test("photo deletion is owner/admin scoped and does not restore upload quota", async ({ request, backend, playwright }) => {
