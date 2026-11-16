@@ -2,7 +2,7 @@
 
 type PrintOptions = { mode?: "iframe" | "route" };
 
-function isIPadOrIPhone() {
+export function isIPadOrIPhone() {
 	return (
 		/iPad|iPhone|iPod/.test(navigator.userAgent) ||
 		(navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)

@@ -1,6 +1,6 @@
 let preparedImage: { url: string; file: File } | undefined;
 
-async function imageFile(imageUrl: string) {
+export async function imageFile(imageUrl: string) {
 	if (preparedImage?.url === imageUrl) return preparedImage.file;
 	const response = await fetch(imageUrl);
 	if (!response.ok) throw new Error("Could not fetch the image.");

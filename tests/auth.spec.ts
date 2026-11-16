@@ -227,51 +227,74 @@ test("gallery prints only the selected image in an isolated iframe", async ({ pa
   await expect(page.locator('iframe[title="Photo print"]')).toHaveCount(0);
 });
 
-test("iPad prints a photo-only page and offers a retry if the dialog is blocked", async ({ page, backend }) => {
+test("iPad sends only the photo to native sharing and can retry after losing activation", async ({ page, backend }) => {
   const name = `${userId}/ipad-print.jpg`;
   await backend.db.query("insert into storage.objects(bucket_id, name) values ('photos', $1)", [name]);
   const image = await readFile("public/images/photoboot-bg.jpeg");
   await page.route("**/object/sign/photos/**", (route) => route.fulfill({ status: 200, contentType: "image/jpeg", body: image }));
-  await page.route("**/share/*/image", (route) => route.fulfill({ status: 200, contentType: "image/jpeg", body: image }));
+  let fetches = 0;
+  await page.route("**/share/*/image", (route) => {
+    fetches++;
+    return route.fulfill({ status: 200, contentType: "image/jpeg", body: image });
+  });
   await page.context().addInitScript(() => {
     Object.defineProperty(navigator, "platform", { value: "MacIntel" });
     Object.defineProperty(navigator, "maxTouchPoints", { value: 5 });
-    window.print = () => {
-      document.body.dataset.printCalls = String(Number(document.body.dataset.printCalls ?? "0") + 1);
-    };
+    Object.defineProperty(navigator, "canShare", { configurable: true, value: (data: ShareData) => data.files?.length === 1 });
+    let attempts = 0;
+    Object.defineProperty(navigator, "share", { configurable: true, value: async (data: ShareData) => {
+      attempts++;
+      const file = data.files![0];
+      document.body.dataset.shared = JSON.stringify({
+        keys: Object.keys(data), name: file.name, type: file.type, size: file.size,
+        active: navigator.userActivation.isActive,
+      });
+      if (attempts === 1) throw new DOMException("Activation expired", "NotAllowedError");
+    } });
   });
   await page.setViewportSize({ width: 820, height: 1180 });
   await page.goto("/gallery");
   await page.getByRole("button", { name: `Open photo ${name}` }).click();
-  const popupPromise = page.waitForEvent("popup");
-  await page.getByRole("dialog").getByRole("button", { name: "Print", exact: true }).click();
-  const popup = await popupPromise;
-  await popup.waitForURL(/\/print\?src=/);
-  expect(new URL(popup.url()).searchParams.get("src")).toMatch(/^blob:/);
-  await expect(popup.locator("body")).toHaveAttribute("data-print-calls", "1");
-  await expect(popup.getByAltText("Photo memory")).toBeVisible();
-  await popup.getByRole("button", { name: "Print photo" }).click();
-  await expect(popup.locator("body")).toHaveAttribute("data-print-calls", "2");
-  await popup.emulateMedia({ media: "print" });
-  await expect(popup.getByRole("button", { name: "Print photo", includeHidden: true })).toBeHidden();
-  await expect(popup.getByText("Gallery", { exact: true })).toHaveCount(0);
-  expect(await popup.getByAltText("Photo memory").evaluate((img) => getComputedStyle(img).objectFit)).toBe("cover");
-  const pdf = await popup.pdf({ width: "148mm", height: "100mm" });
-  expect(pdf.toString("latin1").match(/\/Type\s*\/Page\b/g)).toHaveLength(1);
-  expect(pdf.toString("latin1")).toMatch(/\/Subtype\s*\/Image\b/);
-  await popup.close();
+  const dialog = page.getByRole("dialog");
+  const print = dialog.getByRole("button", { name: "Print", exact: true });
+  await print.click();
+  await expect(dialog.getByRole("status")).toContainText("Photo ready. Tap Print again");
+  await print.click();
+  await expect(dialog.getByRole("status")).toContainText("Choose Print in the share sheet");
+  const shared = JSON.parse((await page.locator("body").getAttribute("data-shared"))!);
+  expect(shared).toEqual({ keys: ["files"], name: "photo-memory.jpg", type: "image/jpeg", size: image.length, active: true });
+  expect(fetches).toBe(1);
+  expect(page.context().pages()).toHaveLength(1);
 
-  await page.unroute("**/share/*/image");
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "share", { configurable: true, value: async () => { throw new DOMException("Cancelled", "AbortError"); } });
+  });
+  await print.click();
+  await expect(dialog.getByRole("status")).toHaveCount(0);
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "canShare", { configurable: true, value: () => false });
+  });
+  await print.click();
+  await expect(dialog.getByRole("alert")).toContainText("print it from the Photos app");
+});
+
+test("iPad print reports image download failures", async ({ page, backend }) => {
+  const name = `${userId}/ipad-failed.jpg`;
+  await backend.db.query("insert into storage.objects(bucket_id, name) values ('photos', $1)", [name]);
+  const image = await readFile("public/images/photoboot-bg.jpeg");
+  await page.route("**/object/sign/photos/**", (route) => route.fulfill({ status: 200, contentType: "image/jpeg", body: image }));
   await page.route("**/share/*/image", (route) => route.fulfill({ status: 503 }));
-  const failedPopupPromise = page.waitForEvent("popup");
-  await page.getByRole("dialog").getByRole("button", { name: "Print", exact: true }).click();
-  const failedPopup = await failedPopupPromise;
-  await expect.poll(() => failedPopup.isClosed()).toBe(true);
-  await expect(page.getByRole("dialog").getByRole("alert")).toContainText("Could not print photo");
-
-  await page.evaluate(() => { window.open = () => null; });
-  await page.getByRole("dialog").getByRole("button", { name: "Print", exact: true }).click();
-  await expect(page.getByRole("dialog").getByRole("alert")).toContainText("Allow pop-ups");
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "platform", { value: "MacIntel" });
+    Object.defineProperty(navigator, "maxTouchPoints", { value: 5 });
+    Object.defineProperty(navigator, "canShare", { value: () => true });
+    Object.defineProperty(navigator, "share", { value: async () => {} });
+  });
+  await page.goto("/gallery");
+  await page.getByRole("button", { name: `Print photo ${name}` }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Could not print photo" })).toBeVisible();
 });
 
 test("photo deletion is owner/admin scoped and does not restore upload quota", async ({ request, backend, playwright }) => {

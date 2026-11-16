@@ -1,9 +1,10 @@
 "use client";
 
 import { Printer } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { printImage } from "@/features/print/printImage";
+import { isIPadOrIPhone, printImage } from "@/features/print/printImage";
+import { imageFile } from "@/features/share/shareImage";
 
 export function PrintButton({
 	src,
@@ -16,6 +17,8 @@ export function PrintButton({
 }) {
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState("");
+	const [message, setMessage] = useState("");
+	const prepared = useRef<{ src: string; file: File } | null>(null);
 
 	return (
 		<div className="flex flex-col items-center gap-2">
@@ -29,9 +32,45 @@ export function PrintButton({
 				onClick={async () => {
 					setBusy(true);
 					setError("");
+					setMessage("");
 					try {
-						await printImage(src);
+						if (isIPadOrIPhone()) {
+							if (!navigator.share || !navigator.canShare) {
+								setError(
+									"Download the photo and print it from the Photos app.",
+								);
+								return;
+							}
+							let file =
+								prepared.current?.src === src ? prepared.current.file : null;
+							if (!file) {
+								file = await imageFile(src);
+								prepared.current = { src, file };
+							}
+							if (!navigator.canShare({ files: [file] })) {
+								setError(
+									"Download the photo and print it from the Photos app.",
+								);
+								return;
+							}
+							setMessage("Choose Print in the share sheet.");
+							await navigator.share({ files: [file] });
+						} else {
+							await printImage(src);
+						}
 					} catch (error) {
+						if (error instanceof DOMException && error.name === "AbortError") {
+							setMessage("");
+							return;
+						}
+						if (
+							error instanceof DOMException &&
+							error.name === "NotAllowedError" &&
+							isIPadOrIPhone()
+						) {
+							setMessage("Photo ready. Tap Print again, then choose Print.");
+							return;
+						}
 						setError(
 							error instanceof Error &&
 								error.message === "The print window was blocked."
@@ -47,6 +86,7 @@ export function PrintButton({
 				{!photoName && (busy ? "Preparing..." : "Print")}
 			</Button>
 			{error && <p role="alert">{error}</p>}
+			{message && <p role="status">{message}</p>}
 		</div>
 	);
 }
