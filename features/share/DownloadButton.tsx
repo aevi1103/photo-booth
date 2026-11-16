@@ -5,14 +5,20 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { downloadImage } from "@/features/share/shareImage";
 
-export function DownloadButton({ imageUrl }: { imageUrl: string }) {
+export function DownloadButton({
+	imageUrl,
+	disabled = false,
+}: {
+	imageUrl: string;
+	disabled?: boolean;
+}) {
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState("");
 
 	return (
 		<div className="flex flex-col items-center gap-2">
 			<Button
-				disabled={busy}
+				disabled={disabled || busy}
 				aria-busy={busy}
 				onClick={async () => {
 					setBusy(true);

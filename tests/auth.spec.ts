@@ -154,7 +154,7 @@ test("gallery isolates users while admins can view all including legacy photos",
   } finally { await admin.dispose(); }
 });
 
-test("gallery prints only the selected photo and disables printing unavailable images", async ({ page, backend }) => {
+test("gallery prints only the selected image in an isolated iframe", async ({ page, backend }) => {
   const names = [1, 2, 3].map((number) => `${userId}/print-${number}.jpg`);
   for (const name of names) {
     await backend.db.query("insert into storage.objects(bucket_id, name) values ('photos', $1)", [name]);
@@ -164,73 +164,114 @@ test("gallery prints only the selected photo and disables printing unavailable i
     if (route.request().url().includes("print-3.jpg")) await route.fulfill({ status: 404 });
     else await route.fulfill({ status: 200, contentType: "image/jpeg", body: image });
   });
+  let fetchedImage = "";
+  let failFetch = false;
+  await page.route("**/share/*/image", async (route) => {
+    fetchedImage = route.request().url();
+    await route.fulfill(failFetch ? { status: 503 } : { status: 200, contentType: "image/jpeg", body: image });
+  });
   await page.addInitScript(() => {
-    window.print = () => {
-      document.body.dataset.printed = JSON.stringify({
-        topLevel: window === window.top,
-        userActivation: navigator.userActivation.isActive,
-        images: [...document.querySelectorAll<HTMLImageElement>("[data-photo-print] img")].map((img) => img.src),
-        imageReady: [...document.querySelectorAll<HTMLImageElement>("[data-photo-print] img")].every((img) => img.complete && img.naturalWidth > 0),
-      });
-      window.dispatchEvent(new Event("afterprint"));
+    const setTimeout = window.setTimeout.bind(window);
+    Object.defineProperty(window, "setTimeout", {
+      value: (handler: TimerHandler, delay?: number, ...args: unknown[]) =>
+        setTimeout(handler, delay === 60_000 ? 200 : delay, ...args),
+    });
+    const append = Element.prototype.append;
+    Element.prototype.append = function (...nodes) {
+      append.apply(this, nodes);
+      for (const node of nodes) {
+        if (node instanceof HTMLIFrameElement && node.title === "Photo print") {
+          const frame = node.contentWindow!;
+          frame.print = () => {
+            if (document.body.dataset.failPrint === "true") throw new Error("Print unavailable");
+            const image = frame.document.querySelector("img")!;
+            document.body.dataset.printed = JSON.stringify({
+              images: frame.document.querySelectorAll("img").length,
+              src: image.src,
+              ready: image.complete && image.naturalWidth > 0,
+              text: frame.document.body.innerText,
+              fit: frame.getComputedStyle(image).objectFit,
+            });
+            frame.dispatchEvent(new Event("afterprint"));
+            document.body.dataset.frameRetained = String(node.isConnected);
+          };
+        }
+      }
     };
   });
   await page.goto("/gallery");
   await expect(page.getByRole("button", { name: `Print photo ${names[2]}` })).toBeDisabled();
   for (const name of names.slice(0, 2)) {
-    await expect.poll(() => page.getByAltText(`Baby-shower memory ${name}`).evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
     await page.getByRole("button", { name: `Print photo ${name}` }).click();
-    await expect.poll(async () => page.locator("body").getAttribute("data-printed")).toContain(name);
+    await expect.poll(async () => page.locator("body").getAttribute("data-printed")).not.toBeNull();
+    expect(Buffer.from(new URL(fetchedImage).pathname.split("/")[2].split(".")[0], "base64url").toString().endsWith(`:${name}`)).toBe(true);
     const printed = JSON.parse((await page.locator("body").getAttribute("data-printed"))!);
-    expect(printed.topLevel).toBe(true);
-    expect(printed.userActivation).toBe(true);
-    expect(printed.imageReady).toBe(true);
-    expect(printed.images).toHaveLength(1);
-    expect(printed.images[0]).toContain(name);
-    await page.emulateMedia({ media: "print" });
-    const printImage = page.locator("[data-photo-print] img");
-    await expect(printImage).toBeVisible();
-    await expect(page.getByRole("button", { name: `Print photo ${name}`, includeHidden: true })).toBeHidden();
-    const imageStyle = await printImage.evaluate((img) => ({
-      width: img.getBoundingClientRect().width, height: img.getBoundingClientRect().height,
-      viewportWidth: document.documentElement.clientWidth, viewportHeight: window.innerHeight,
-      fit: getComputedStyle(img).objectFit,
-    }));
-    expect(imageStyle.fit).toBe("contain");
-    expect(imageStyle.width).toBe(imageStyle.viewportWidth);
-    expect(imageStyle.height).toBe(imageStyle.viewportHeight);
-    const pdf = await page.pdf();
-    expect(pdf.toString("latin1").match(/\/Type\s*\/Page\b/g)).toHaveLength(1);
-    expect(pdf.toString("latin1")).toMatch(/\/Subtype\s*\/Image\b/);
-    await page.emulateMedia({ media: "screen" });
-    await page.mouse.click(1, 1);
-    await expect(printImage).toHaveCount(0);
+    expect(printed).toMatchObject({ images: 1, ready: true, text: "", fit: "cover" });
+    expect(printed.src).toMatch(/^blob:/);
+    await expect(page.locator("body")).toHaveAttribute("data-frame-retained", "true");
+    await page.locator("body").evaluate((body) => { delete body.dataset.printed; });
+    await expect(page.locator('iframe[title="Photo print"]')).toHaveCount(0);
   }
-
-  await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("button", { name: `Open photo ${names[0]}` }).click();
   const dialog = page.getByRole("dialog");
-  await expect.poll(() => dialog.getByAltText("Full-size baby-shower memory").evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
   await dialog.getByRole("button", { name: "Print", exact: true }).click();
-  const printed = JSON.parse((await page.locator("body").getAttribute("data-printed"))!);
-  expect(printed.topLevel).toBe(true);
-  expect(printed.userActivation).toBe(true);
-  expect(printed.imageReady).toBe(true);
-  expect(printed.images).toHaveLength(1);
-  expect(printed.images[0]).toContain(names[0]);
-  await page.emulateMedia({ media: "print" });
-  await expect(page.locator("[data-photo-print] img")).toBeVisible();
-  await expect(dialog).toBeHidden();
-  const pdf = await page.pdf();
-  expect(pdf.toString("latin1").match(/\/Type\s*\/Page\b/g)).toHaveLength(1);
-  expect(pdf.toString("latin1")).toMatch(/\/Subtype\s*\/Image\b/);
-  await page.emulateMedia({ media: "screen" });
-  await page.keyboard.press("Shift");
-  await expect(page.locator("[data-photo-print]")).toHaveCount(0);
-  await page.evaluate(() => { window.print = () => { throw new Error("Printing unavailable"); }; });
+  await expect.poll(async () => page.locator("body").getAttribute("data-printed")).not.toBeNull();
+  expect(Buffer.from(new URL(fetchedImage).pathname.split("/")[2].split(".")[0], "base64url").toString()).toContain(names[0]);
+  failFetch = true;
   await dialog.getByRole("button", { name: "Print", exact: true }).click();
   await expect(dialog.getByRole("alert")).toContainText("Could not print photo");
-  await expect(page.locator("[data-photo-print]")).toHaveCount(0);
+  failFetch = false;
+  await page.locator("body").evaluate((body) => { body.dataset.failPrint = "true"; });
+  await dialog.getByRole("button", { name: "Print", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toContainText("Could not print photo");
+  await expect(page.locator('iframe[title="Photo print"]')).toHaveCount(0);
+});
+
+test("iPad prints a photo-only page and offers a retry if the dialog is blocked", async ({ page, backend }) => {
+  const name = `${userId}/ipad-print.jpg`;
+  await backend.db.query("insert into storage.objects(bucket_id, name) values ('photos', $1)", [name]);
+  const image = await readFile("public/images/photoboot-bg.jpeg");
+  await page.route("**/object/sign/photos/**", (route) => route.fulfill({ status: 200, contentType: "image/jpeg", body: image }));
+  await page.route("**/share/*/image", (route) => route.fulfill({ status: 200, contentType: "image/jpeg", body: image }));
+  await page.context().addInitScript(() => {
+    Object.defineProperty(navigator, "platform", { value: "MacIntel" });
+    Object.defineProperty(navigator, "maxTouchPoints", { value: 5 });
+    window.print = () => {
+      document.body.dataset.printCalls = String(Number(document.body.dataset.printCalls ?? "0") + 1);
+    };
+  });
+  await page.setViewportSize({ width: 820, height: 1180 });
+  await page.goto("/gallery");
+  await page.getByRole("button", { name: `Open photo ${name}` }).click();
+  const popupPromise = page.waitForEvent("popup");
+  await page.getByRole("dialog").getByRole("button", { name: "Print", exact: true }).click();
+  const popup = await popupPromise;
+  await popup.waitForURL(/\/print\?src=/);
+  expect(new URL(popup.url()).searchParams.get("src")).toMatch(/^blob:/);
+  await expect(popup.locator("body")).toHaveAttribute("data-print-calls", "1");
+  await expect(popup.getByAltText("Photo memory")).toBeVisible();
+  await popup.getByRole("button", { name: "Print photo" }).click();
+  await expect(popup.locator("body")).toHaveAttribute("data-print-calls", "2");
+  await popup.emulateMedia({ media: "print" });
+  await expect(popup.getByRole("button", { name: "Print photo", includeHidden: true })).toBeHidden();
+  await expect(popup.getByText("Gallery", { exact: true })).toHaveCount(0);
+  expect(await popup.getByAltText("Photo memory").evaluate((img) => getComputedStyle(img).objectFit)).toBe("cover");
+  const pdf = await popup.pdf({ width: "148mm", height: "100mm" });
+  expect(pdf.toString("latin1").match(/\/Type\s*\/Page\b/g)).toHaveLength(1);
+  expect(pdf.toString("latin1")).toMatch(/\/Subtype\s*\/Image\b/);
+  await popup.close();
+
+  await page.unroute("**/share/*/image");
+  await page.route("**/share/*/image", (route) => route.fulfill({ status: 503 }));
+  const failedPopupPromise = page.waitForEvent("popup");
+  await page.getByRole("dialog").getByRole("button", { name: "Print", exact: true }).click();
+  const failedPopup = await failedPopupPromise;
+  await expect.poll(() => failedPopup.isClosed()).toBe(true);
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText("Could not print photo");
+
+  await page.evaluate(() => { window.open = () => null; });
+  await page.getByRole("dialog").getByRole("button", { name: "Print", exact: true }).click();
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText("Allow pop-ups");
 });
 
 test("photo deletion is owner/admin scoped and does not restore upload quota", async ({ request, backend, playwright }) => {
@@ -274,7 +315,7 @@ test("gallery deletion controls are admin-only and confined to the standalone ga
       const canDelete = isAdmin && path === "/gallery";
       await expect(page.getByRole("button", { name: "Delete", exact: true })).toHaveCount(canDelete ? 1 : 0);
       await expect(page.getByRole("button", { name: /^Delete selected/ })).toHaveCount(canDelete ? 1 : 0);
-      await expect(page.getByRole("checkbox", { name: `Select photo ${name}`, exact: true })).toHaveCount(canDelete ? 1 : 0);
+      await expect(page.getByRole("checkbox", { name: `Select photo ${name}`, exact: true })).toHaveCount(path === "/gallery" ? 1 : 0);
     }
   }
   await page.route("**/api/account", route => route.fulfill({ status: 503, json: { error: "Could not load your upload allowance." } }));

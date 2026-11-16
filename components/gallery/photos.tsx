@@ -1,6 +1,6 @@
 "use client";
 
-import { Images, Printer, RefreshCw, Trash } from "lucide-react";
+import { Download, Images, RefreshCw, Trash } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useId, useRef, useState } from "react";
 import { PhotoDialogContent } from "@/components/gallery/photo-dialog";
@@ -31,7 +31,8 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { printPhoto } from "@/lib/print-photo";
+import { PrintButton } from "@/features/print/PrintButton";
+import { downloadPhotos } from "@/features/share/downloadPhotos";
 import { useQuota } from "@/lib/queries/account";
 import { useDeletePhoto } from "@/lib/queries/photos";
 import { cn } from "@/lib/utils";
@@ -60,7 +61,8 @@ export function GalleryPhotos({
 		previousNewest.current = newestName;
 	}, [booth, newestName, carousel]);
 	const [photosToDelete, setPhotosToDelete] = useState<string[]>([]);
-	const [printError, setPrintError] = useState("");
+	const [downloadError, setDownloadError] = useState("");
+	const [downloading, setDownloading] = useState(false);
 	const [selectedNames, setSelectedNames] = useState<ReadonlySet<string>>(
 		new Set(),
 	);
@@ -122,10 +124,41 @@ export function GalleryPhotos({
 						)}
 					</div>
 					<div className="flex flex-wrap gap-2">
+						{!booth && (
+							<Button
+								variant="outline"
+								disabled={
+									!selectedPhotos.length || downloading || deletion.isPending
+								}
+								aria-busy={downloading}
+								onClick={async () => {
+									setDownloading(true);
+									setDownloadError("");
+									try {
+										await downloadPhotos(
+											photos.filter((photo) => selectedNames.has(photo.name)),
+										);
+									} catch {
+										setDownloadError(
+											"Could not download the selected photos. Refresh photos and try again. No ZIP was saved.",
+										);
+									} finally {
+										setDownloading(false);
+									}
+								}}
+							>
+								<Download data-icon="inline-start" />
+								{downloading
+									? "Downloading..."
+									: `Download selected (${selectedPhotos.length})`}
+							</Button>
+						)}
 						{canDelete && (
 							<Button
 								variant="destructive"
-								disabled={!selectedPhotos.length || deletion.isPending}
+								disabled={
+									!selectedPhotos.length || deletion.isPending || downloading
+								}
 								onClick={() => {
 									deletion.reset();
 									setPhotosToDelete(selectedPhotos);
@@ -169,14 +202,7 @@ export function GalleryPhotos({
 							{staleError.message} Showing previously loaded photos.
 						</p>
 					)}
-					{printError && (
-						<p
-							className="mt-3.5 rounded-[9px] bg-[#fff1ed] p-[11px] text-[13px] text-[#934b43]"
-							role="alert"
-						>
-							{printError}
-						</p>
-					)}
+					{downloadError && <p role="alert">{downloadError}</p>}
 					{!isPending && !loadError && !photos.length && (
 						<p className="py-12 text-center">
 							No photos yet. Capture a photo in the booth to start making
@@ -211,7 +237,7 @@ export function GalleryPhotos({
 											booth && "bg-transparent",
 										)}
 									>
-										{canDelete && (
+										{!booth && (
 											<div className="flex gap-2 justify-between">
 												<label
 													htmlFor={`${selectionId}-${encodeURIComponent(photo.name)}`}
@@ -221,7 +247,7 @@ export function GalleryPhotos({
 														id={`${selectionId}-${encodeURIComponent(photo.name)}`}
 														aria-label={`Select photo ${photo.name}`}
 														checked={selectedNames.has(photo.name)}
-														disabled={deletion.isPending}
+														disabled={deletion.isPending || downloading}
 														onCheckedChange={(checked) => {
 															setSelectedNames((previous) => {
 																const next = new Set(previous);
@@ -233,18 +259,20 @@ export function GalleryPhotos({
 													/>
 												</label>
 
-												<Button
-													variant={"ghost"}
-													size="sm"
-													aria-label="Delete"
-													disabled={deletion.isPending}
-													onClick={() => {
-														deletion.reset();
-														setPhotosToDelete([photo.name]);
-													}}
-												>
-													<Trash className="h-4 w-4 text-red-500" />
-												</Button>
+												{canDelete && (
+													<Button
+														variant={"ghost"}
+														size="sm"
+														aria-label="Delete"
+														disabled={deletion.isPending || downloading}
+														onClick={() => {
+															deletion.reset();
+															setPhotosToDelete([photo.name]);
+														}}
+													>
+														<Trash className="h-4 w-4 text-red-500" />
+													</Button>
+												)}
 											</div>
 										)}
 										<Tooltip disabled={!booth}>
@@ -263,7 +291,7 @@ export function GalleryPhotos({
 												}
 											>
 												<AspectRatio ratio={3 / 2}>
-													<div data-print-photo className="size-full">
+													<div className="size-full">
 														<Image
 															className="size-full object-contain"
 															src={photo.url}
@@ -307,30 +335,15 @@ export function GalleryPhotos({
 														)}
 														<div className="flex items-center gap-2">
 															{!booth && (
-																<Button
-																	variant="outline"
-																	size="icon-sm"
-																	aria-label={`Print photo ${photo.name}`}
-																	title="Print photo"
+																<PrintButton
+																	src={
+																		photo.shareUrl
+																			? `${photo.shareUrl}/image`
+																			: photo.url
+																	}
+																	photoName={photo.name}
 																	disabled={failedUrls.has(photo.url)}
-																	onClick={(event) => {
-																		setPrintError("");
-																		const image = event.currentTarget
-																			.closest("figure")
-																			?.querySelector<HTMLImageElement>(
-																				"[data-print-photo] img",
-																			);
-																		try {
-																			printPhoto(image ?? null);
-																		} catch {
-																			setPrintError(
-																				"Could not print photo. Please try again.",
-																			);
-																		}
-																	}}
-																>
-																	<Printer />
-																</Button>
+																/>
 															)}
 														</div>
 													</div>

@@ -51,11 +51,15 @@ export async function shareImage(
 	}
 }
 
-export async function downloadImage(imageUrl: string) {
-	const response = await fetch(imageUrl.replace(/\/image$/, "/download"), {
-		method: "POST",
-		cache: "no-store",
-	});
+export async function fetchDownloadImage(imageUrl: string): Promise<File> {
+	const shared = imageUrl.endsWith("/image");
+	const response = await fetch(
+		shared ? imageUrl.replace(/\/image$/, "/download") : imageUrl,
+		{
+			method: shared ? "POST" : "GET",
+			cache: "no-store",
+		},
+	);
 	if (!response.ok) throw new Error("Could not download the image.");
 	const blob = await response.blob();
 	const extension =
@@ -69,11 +73,15 @@ export async function downloadImage(imageUrl: string) {
 		!blob.size
 	)
 		throw new Error("The image is unavailable.");
-	const url = URL.createObjectURL(blob);
+	return new File([blob], `photo-memory.${extension}`, { type: blob.type });
+}
+
+export function saveFile(file: File) {
+	const url = URL.createObjectURL(file);
 	const link = document.createElement("a");
 	try {
 		link.href = url;
-		link.download = `photo-memory.${extension}`;
+		link.download = file.name;
 		document.body.append(link);
 		link.click();
 	} finally {
@@ -81,4 +89,8 @@ export async function downloadImage(imageUrl: string) {
 		// Give Safari time to start consuming the object URL.
 		setTimeout(() => URL.revokeObjectURL(url), 60_000);
 	}
+}
+
+export async function downloadImage(imageUrl: string) {
+	saveFile(await fetchDownloadImage(imageUrl));
 }

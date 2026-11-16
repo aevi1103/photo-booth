@@ -1,9 +1,7 @@
 "use client";
 
-import { Printer } from "lucide-react";
 import Image from "next/image";
-import { useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { useState } from "react";
 import {
 	DialogContent,
 	DialogDescription,
@@ -11,8 +9,9 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import { QrCode, QrCodeFrame } from "@/components/ui/qr-code";
+import { PrintButton } from "@/features/print/PrintButton";
+import { DownloadButton } from "@/features/share/DownloadButton";
 import { ShareButton } from "@/features/share/ShareButton";
-import { printPhoto } from "@/lib/print-photo";
 import type { GalleryPhoto } from "@/lib/queries/photos";
 
 export function PhotoDialogContent({
@@ -22,9 +21,7 @@ export function PhotoDialogContent({
 	photo: GalleryPhoto;
 	autoClose?: boolean;
 }) {
-	const previewRef = useRef<HTMLImageElement>(null);
 	const [failedUrl, setFailedUrl] = useState("");
-	const [printError, setPrintError] = useState("");
 	const failed = failedUrl === photo.url;
 	return (
 		<DialogContent
@@ -42,6 +39,10 @@ export function PhotoDialogContent({
 				</DialogDescription>
 			</DialogHeader>
 			<div className="flex flex-wrap items-start gap-3">
+				<DownloadButton
+					imageUrl={photo.shareUrl ? `${photo.shareUrl}/image` : photo.url}
+					disabled={failed}
+				/>
 				{photo.shareUrl && (
 					<ShareButton
 						imageUrl={`${photo.shareUrl}/image`}
@@ -49,28 +50,14 @@ export function PhotoDialogContent({
 						title="Nugget Photo Booth memory"
 					/>
 				)}
-				<Button
-					variant="outline"
-					size="sm"
+				<PrintButton
+					src={photo.shareUrl ? `${photo.shareUrl}/image` : photo.url}
 					disabled={failed}
-					onClick={() => {
-						setPrintError("");
-						try {
-							printPhoto(previewRef.current);
-						} catch {
-							setPrintError("Could not print photo. Please try again.");
-						}
-					}}
-				>
-					<Printer data-icon="inline-start" />
-					Print
-				</Button>
+				/>
 			</div>
-			{printError && <p role="alert">{printError}</p>}
 			<div className="grid min-w-0 items-center gap-6 md:grid-cols-[minmax(0,1fr)_240px]">
 				<div className="min-w-0">
 					<Image
-						ref={previewRef}
 						src={photo.url}
 						alt="Full-size baby-shower memory"
 						width={1536}

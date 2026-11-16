@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type { Page } from "@playwright/test";
+import { unzipSync } from "fflate";
 import {
 	adminId,
 	expect,
@@ -36,6 +37,130 @@ async function openPhoto(page: Page, path = "/gallery") {
 		page.getByRole("heading", { name: "Photo memory" }),
 	).toBeVisible();
 }
+
+for (const path of ["/", "/gallery"]) {
+	test(`photo dialog downloads directly and can retry a failed download on ${path}`, async ({
+		page,
+		backend,
+	}) => {
+		await openPhoto(page, path);
+		const dialog = page.getByRole("dialog", { name: "Photo memory" });
+		const button = dialog.getByRole("button", { name: "Download image" });
+		backend.storageError = 503;
+		await button.click();
+		await expect(dialog.getByRole("alert")).toContainText("Could not download");
+		await expect(button).toBeEnabled();
+		backend.storageError = null;
+		const waiting = page.waitForEvent("download");
+		await button.click();
+		const download = await waiting;
+		expect(download.suggestedFilename()).toBe("photo-memory.png");
+		expect(await readFile(await download.path())).toEqual(png);
+		await expect(dialog).toBeVisible();
+		await expect(dialog.getByRole("alert")).toHaveCount(0);
+	});
+}
+
+test("gallery downloads one selected image or a ZIP containing only selected images", async ({
+	page,
+	backend,
+}) => {
+	const secondName = `${userId}/second.png`;
+	await backend.db.query(
+		"insert into storage.objects(bucket_id, name) values ('photos', $1)",
+		[secondName],
+	);
+	backend.objects.set(secondName, png);
+	await page.route("**/storage/v1/object/sign/photos/**", (route) =>
+		route.fulfill({ contentType: "image/png", body: png }),
+	);
+	await page.goto("/gallery");
+	await expect(page.getByRole("checkbox")).toHaveCount(2);
+	await expect(
+		page.getByRole("button", { name: "Delete", exact: true }),
+	).toHaveCount(0);
+	await expect(
+		page.getByRole("button", { name: "Download selected (0)" }),
+	).toBeDisabled();
+	await page
+		.getByRole("checkbox", { name: `Select photo ${name}`, exact: true })
+		.check();
+	const singleWaiting = page.waitForEvent("download");
+	await page.getByRole("button", { name: "Download selected (1)" }).click();
+	const single = await singleWaiting;
+	expect(single.suggestedFilename()).toBe("photo-memory.png");
+	expect(await readFile(await single.path())).toEqual(png);
+
+	await page
+		.getByRole("checkbox", { name: `Select photo ${secondName}`, exact: true })
+		.check();
+	const zipWaiting = page.waitForEvent("download");
+	await page.getByRole("button", { name: "Download selected (2)" }).click();
+	const zip = await zipWaiting;
+	expect(zip.suggestedFilename()).toBe("photo-memories.zip");
+	const files = unzipSync(await readFile(await zip.path()));
+	expect(Object.keys(files)).toEqual([
+		"1-photo-memory.png",
+		"2-photo-memory.png",
+	]);
+	for (const bytes of Object.values(files))
+		expect(Buffer.from(bytes)).toEqual(png);
+	expect(
+		(
+			await backend.db.query(
+				"select photo_name as name, download_count from public.photo_download_counts order by photo_name",
+			)
+		).rows,
+	).toEqual([
+		{ name, download_count: 2 },
+		{ name: secondName, download_count: 1 },
+	]);
+	await page
+		.getByRole("checkbox", { name: `Select photo ${name}`, exact: true })
+		.uncheck();
+	await expect(
+		page.getByRole("button", { name: "Download selected (1)" }),
+	).toBeEnabled();
+});
+
+test("gallery does not save a partial ZIP and keeps the selection for retry", async ({
+	page,
+}) => {
+	await page.context().addCookies([sessionCookie(adminId)]);
+	await page.route("**/storage/v1/object/sign/photos/**", (route) =>
+		route.fulfill({ contentType: "image/png", body: png }),
+	);
+	await page.goto("/gallery");
+	await expect(page.getByRole("checkbox")).toHaveCount(2);
+	for (const checkbox of await page.getByRole("checkbox").all())
+		await checkbox.check();
+	let requests = 0;
+	await page.route("**/share/*/download", async (route) => {
+		requests += 1;
+		if (requests === 2) await route.fulfill({ status: 503 });
+		else await route.continue();
+	});
+	let downloads = 0;
+	page.on("download", () => {
+		downloads += 1;
+	});
+	const button = page.getByRole("button", { name: "Download selected (2)" });
+	await button.click();
+	const error = page.getByRole("alert").filter({ hasText: "No ZIP was saved" });
+	await expect(error).toBeVisible();
+	await expect(button).toBeEnabled();
+	expect(requests).toBe(2);
+	expect(downloads).toBe(0);
+	for (const checkbox of await page.getByRole("checkbox").all())
+		await expect(checkbox).toBeChecked();
+	const waiting = page.waitForEvent("download");
+	await button.click();
+	const zip = await waiting;
+	expect(Object.keys(unzipSync(await readFile(await zip.path())))).toHaveLength(
+		2,
+	);
+	await expect(error).toHaveCount(0);
+});
 
 test("explicit anonymous downloads count repeats, not views, and recover from failures", async ({
 	page,
@@ -756,6 +881,8 @@ test("clipboard failures stay visible and offer other sharing choices", async ({
 	await expect(page.getByRole("alert")).toContainText("clipboard");
 	await expect(page.getByRole("link", { name: "Facebook" })).toBeVisible();
 	await expect(
-		page.getByRole("button", { name: "Download image" }),
+		page
+			.locator('[data-slot="popover-content"]')
+			.getByRole("button", { name: "Download image" }),
 	).toBeEnabled();
 });
